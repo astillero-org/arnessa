@@ -28,6 +28,8 @@ A database of shot types (`catalog_front`, `terrace_restaurant`, etc.) and their
 - `upscale_images`: AI upscaling for images in a folder.
 - `create_product_collages`: Generates product collages from folders of images.
 - `generate_furniture_image`: Generates a single furniture image from a reference photo and a prompt.
+- `send_image_to_user`: Sends an image to the user interface.
+- `list_artifacts`: Lists current photos in the system, useful for referencing existing images without asking the user.
 
 ## Gotchas
 

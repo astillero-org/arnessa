@@ -6,10 +6,14 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+
+from ag_ui.core import CustomEvent, EventType, StateSnapshotEvent
+
 import torch
 from PIL import Image
 from pydantic_ai import Tool
 from google.genai import types, Client
+from pydantic_ai import Agent, BinaryContent, ToolReturn
 
 # Constants
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
@@ -263,6 +267,27 @@ def image_file_to_base64(image_path: str) -> str:
         return base64_str
     except Exception as e:
         return f"Failed to convert image to base64: {e}"
+   
+
+def send_image_to_user(image_path: str) -> ToolReturn:
+    base64_str = image_file_to_base64(image_path)
+    if base64_str.startswith("Failed"):
+        return ToolReturn(return_value=base64_str)
+        
+    return ToolReturn(
+        return_value="Image displayed",
+        metadata=[
+            CustomEvent(
+                type=EventType.CUSTOM,
+                name="image_output",
+                value={
+                    "path": image_path,
+                    "data": base64_str,
+                    "mime_type": mimetypes.guess_type(image_path)[0] or "image/jpeg"
+                }
+            )
+        ]
+    )
 
 # Pydantic AI Tool Definitions
 def get_photo_tools() -> List[Tool]:
@@ -301,11 +326,16 @@ def get_photo_tools() -> List[Tool]:
         Tool(
             base64_to_image_file,
             name="base64_to_image_file",
-            description="Converts a base64-encoded image string to an image file on disk."
+            description="Converts a base64-encoded image string to an image file on disk. Don't use this for large images as it may consume a lot of tokens."
         ),
         Tool(
             image_file_to_base64,
             name="image_file_to_base64",
-            description="Converts an image file on disk to a base64-encoded string."
+            description="Converts an image file on disk to a base64-encoded string. Don't use this for large images as it may consume a lot of tokens."
         ),
+        Tool(
+            send_image_to_user,
+            name="send_image_to_user",
+            description="Returns an image file as a base64-encoded string in the tool output for display in the UI."
+        )
     ]

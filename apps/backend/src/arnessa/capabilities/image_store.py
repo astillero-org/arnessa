@@ -10,6 +10,7 @@ from pydantic_ai import ModelRequestContext, RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelRequest, BinaryContent, BinaryImage, ImageUrl, UserPromptPart
 from pydantic_ai.toolsets import AgentToolset, FunctionToolset
+from arnessa.state import ArnessaDeps
 
 toolset = FunctionToolset()
 
@@ -22,8 +23,8 @@ def list_artifacts(ctx: RunContext[Any]) -> List[str]:
         A list of absolute file paths to the artifacts.
     """
     artifacts = []
-    if hasattr(ctx.deps, 'artifact_store'):
-        artifacts = ctx.deps.artifact_store
+    if hasattr(ctx.deps.state, 'artifact_store'):
+        artifacts = ctx.deps.state.artifact_store
     
     logfire.info("Model requested artifact list. Returning {count} items.", count=len(artifacts))
     return artifacts
@@ -38,16 +39,15 @@ class ImageStoreCapability(AbstractCapability[Any]):
 
     async def before_model_request(
         self,
-        ctx: RunContext[Any],
+        ctx: RunContext[ArnessaDeps],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
         workspace_dir = os.environ.get("WORKSPACE_DIR", "./workspace")
         os.makedirs(workspace_dir, exist_ok=True)
 
         # Initialize processed_identifiers if it doesn't exist in deps
-        if not hasattr(ctx.deps, 'processed_user_prompts'):
-            # Fallback if deps wasn't updated
-            pass
+        if not hasattr(ctx.deps.state, 'processed_user_prompts'):
+            ctx.deps.state.processed_user_prompts = set()
 
         with logfire.span("ImageStoreCapability.before_model_request", messages_count=len(request_context.messages)):
             for message in request_context.messages:
@@ -57,7 +57,7 @@ class ImageStoreCapability(AbstractCapability[Any]):
                         if isinstance(part, UserPromptPart):
                             timestamp = part.timestamp.isoformat() if part.timestamp else "unknown_time"
                             
-                            if timestamp in ctx.deps.processed_user_prompts:
+                            if timestamp in ctx.deps.state.processed_user_prompts:
                                 logfire.info("Skipping already processed user prompt at {timestamp}", timestamp=timestamp)
                                 continue
                             
@@ -67,12 +67,12 @@ class ImageStoreCapability(AbstractCapability[Any]):
                             else:
                                 await self._process_image_part(ctx, part.content, workspace_dir)
                 
-                            ctx.deps.processed_user_prompts.add(timestamp)
+                            ctx.deps.state.processed_user_prompts.add(timestamp)
                                 
                         
         return request_context
 
-    async def _process_image_part(self, ctx: RunContext[Any], part: Any, workspace_dir: str) -> None:
+    async def _process_image_part(self, ctx: RunContext[ArnessaDeps], part: Any, workspace_dir: str) -> None:
         """Helper to process an image part if it hasn't been processed yet."""
         
         data: Optional[bytes] = None
@@ -132,8 +132,8 @@ class ImageStoreCapability(AbstractCapability[Any]):
                     f.write(data)
 
                 # Track in artifact_store
-                if hasattr(ctx.deps, 'artifact_store') and isinstance(ctx.deps.artifact_store, list):
-                    ctx.deps.artifact_store.append(filepath)
+                if hasattr(ctx.deps, 'state') and hasattr(ctx.deps.state, 'artifact_store') and isinstance(ctx.deps.state.artifact_store, list):
+                    ctx.deps.state.artifact_store.append(filepath)
                 
                 # Mark as processed
                 if part_id:
@@ -143,14 +143,14 @@ class ImageStoreCapability(AbstractCapability[Any]):
                 logfire.error("Failed to save image to {path}: {error}", 
                              path=filepath, error=str(e))
 
-    def _is_processed(self, ctx: RunContext[Any], part_id: str) -> bool:
-        if hasattr(ctx.deps, 'processed_image_ids') and isinstance(ctx.deps.processed_image_ids, set):
-            return part_id in ctx.deps.processed_image_ids
+    def _is_processed(self, ctx: RunContext[ArnessaDeps], part_id: str) -> bool:
+        if hasattr(ctx.deps, 'state') and hasattr(ctx.deps.state, 'processed_user_prompts') and isinstance(ctx.deps.state.processed_user_prompts, set):
+            return part_id in ctx.deps.state.processed_user_prompts
         return False
 
-    def _mark_processed(self, ctx: RunContext[Any], part_id: str) -> None:
-        if hasattr(ctx.deps, 'processed_image_ids') and isinstance(ctx.deps.processed_image_ids, set):
-            ctx.deps.processed_image_ids.add(part_id)
+    def _mark_processed(self, ctx: RunContext[ArnessaDeps], part_id: str) -> None:
+        if hasattr(ctx.deps, 'state') and hasattr(ctx.deps.state, 'processed_user_prompts') and isinstance(ctx.deps.state.processed_user_prompts, set):
+            ctx.deps.state.processed_user_prompts.add(part_id)
 
     def get_toolset(self) -> Optional[AgentToolset[Any]]:
         return toolset
