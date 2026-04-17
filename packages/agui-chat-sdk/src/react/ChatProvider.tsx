@@ -1,53 +1,116 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+'use client';
+
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatController } from '../core/ChatController';
 import { ChatState } from '../core/ChatStore';
 import { AttachmentDraft } from '../core/attachment-utils';
+import {
+  ChatLabels,
+  ChatComponentOverrides,
+  ChatRendererOverrides,
+} from '../core/types';
 
-interface ChatContextValue {
-  controller: ChatController;
+const DEFAULT_LABELS: Required<ChatLabels> = {
+  placeholder: 'Type a message…',
+  attachLabel: 'Attach',
+  sendLabel: 'Send',
+  emptyTitle: 'Start a conversation',
+  emptySubtitle: 'Send a message to get started.',
+  dragHint: 'Drag images or documents here',
+  closeImageLabel: 'Close image',
+  activityDefault: 'Activity',
+  toolResultDefault: 'Result',
+};
+
+interface ChatStateContextValue {
   state: ChatState;
 }
 
-const ChatContext = createContext<ChatContextValue | undefined>(undefined);
+interface ChatActionsContextValue {
+  controller: ChatController;
+  sendMessage: (content: string | { text: string; attachments?: AttachmentDraft[] }) => Promise<unknown>;
+  abort: () => void;
+}
+
+interface ChatOverridesContextValue {
+  labels: Required<ChatLabels>;
+  components: ChatComponentOverrides;
+  renderers: ChatRendererOverrides;
+}
+
+const ChatStateContext = createContext<ChatStateContextValue | undefined>(undefined);
+const ChatActionsContext = createContext<ChatActionsContextValue | undefined>(undefined);
+const ChatOverridesContext = createContext<ChatOverridesContextValue | undefined>(undefined);
 
 export interface ChatProviderProps {
   controller: ChatController;
+  labels?: ChatLabels;
+  components?: ChatComponentOverrides;
+  renderers?: ChatRendererOverrides;
   children: React.ReactNode;
 }
 
-export const ChatProvider: React.FC<ChatProviderProps> = ({ controller, children }) => {
+export const ChatProvider: React.FC<ChatProviderProps> = ({
+  controller,
+  labels,
+  components = {},
+  renderers = {},
+  children,
+}) => {
   const [state, setState] = useState<ChatState>(controller.store.getState());
+  const controllerRef = useRef(controller);
+  controllerRef.current = controller;
 
   useEffect(() => {
     const unsubscribe = controller.store.subscribe((newState) => {
       setState(newState);
     });
-    return () => unsubscribe();
+    return unsubscribe;
   }, [controller]);
 
-  const value = useMemo(() => ({ controller, state }), [controller, state]);
+  const actions = useMemo<ChatActionsContextValue>(() => ({
+    controller,
+    sendMessage: (content) => controllerRef.current.sendUserMessage(content as any),
+    abort: () => controllerRef.current.abort(),
+  }), [controller]);
+
+  const overrides = useMemo<ChatOverridesContextValue>(() => ({
+    labels: { ...DEFAULT_LABELS, ...labels },
+    components,
+    renderers,
+  }), [labels, components, renderers]);
 
   return (
-    <ChatContext.Provider value={value}>
-      {children}
-    </ChatContext.Provider>
+    <ChatStateContext.Provider value={{ state }}>
+      <ChatActionsContext.Provider value={actions}>
+        <ChatOverridesContext.Provider value={overrides}>
+          {children}
+        </ChatOverridesContext.Provider>
+      </ChatActionsContext.Provider>
+    </ChatStateContext.Provider>
   );
 };
 
-export const useChat = () => {
-  const context = useContext(ChatContext);
-  if (!context) {
-    throw new Error('useChat must be used within a ChatProvider');
-  }
-  return context;
+export const useChatState = (): ChatState => {
+  const ctx = useContext(ChatStateContext);
+  if (!ctx) throw new Error('useChatState must be used within a ChatProvider');
+  return ctx.state;
 };
 
-export const useChatState = () => useChat().state;
 export const useChatActions = () => {
-  const { controller } = useChat();
-  return useMemo(() => ({
-    sendMessage: (text: string | { text: string; attachments?: AttachmentDraft[] }) => controller.sendUserMessage(text as any),
-    run: (params?: any) => controller.run(params),
-    abort: () => controller.abort(),
-  }), [controller]);
+  const ctx = useContext(ChatActionsContext);
+  if (!ctx) throw new Error('useChatActions must be used within a ChatProvider');
+  return ctx;
+};
+
+export const useChatOverrides = (): ChatOverridesContextValue => {
+  const ctx = useContext(ChatOverridesContext);
+  if (!ctx) throw new Error('useChatOverrides must be used within a ChatProvider');
+  return ctx;
+};
+
+export const useChat = () => {
+  const { state } = useContext(ChatStateContext) ?? (() => { throw new Error('useChat must be used within a ChatProvider'); })();
+  const actions = useChatActions();
+  return { state, controller: actions.controller };
 };

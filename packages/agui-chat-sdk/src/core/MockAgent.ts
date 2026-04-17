@@ -1,7 +1,6 @@
 import { AbstractAgent, AgentSubscriber, RunAgentResult } from "@ag-ui/client";
-import { BaseEvent, EventType, RunAgentInput, Message } from "@ag-ui/core";
+import { BaseEvent, EventType, RunAgentInput } from "@ag-ui/core";
 import { Observable, of } from "rxjs";
-import { SDKMessage } from "./ChatStore";
 
 export class MockAgent extends AbstractAgent {
   constructor() {
@@ -9,60 +8,74 @@ export class MockAgent extends AbstractAgent {
     this.messages = [];
   }
 
-  // Abstract method implementation
-  run(input: RunAgentInput): Observable<BaseEvent> {
-    return of({ type: EventType.RUN_STARTED } as any);
+  run(_input: RunAgentInput): Observable<BaseEvent> {
+    return of({ type: EventType.RUN_STARTED, timestamp: Date.now() } as BaseEvent);
   }
 
-  async runAgent(params: any, subscriber?: AgentSubscriber): Promise<RunAgentResult> {
+  async runAgent(_params?: unknown, subscriber?: AgentSubscriber): Promise<RunAgentResult> {
     if (subscriber) this.subscribe(subscriber);
 
     const lastMessage = this.messages[this.messages.length - 1];
-    
-    this.notifySubscribers(EventType.RUN_STARTED, { type: EventType.RUN_STARTED });
 
-    // Simulate thinking
+    this.notifySubscribers(EventType.RUN_STARTED, { type: EventType.RUN_STARTED, timestamp: Date.now() });
+
     await new Promise(r => setTimeout(r, 500));
 
     this.notifySubscribers(EventType.CUSTOM, {
       type: EventType.CUSTOM,
       name: "thinking",
       value: "Searching for answers...",
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
 
     await new Promise(r => setTimeout(r, 1000));
 
-    const response: SDKMessage = {
-      role: "assistant" as const,
-      id: Math.random().toString(36).substring(7),
-      content: `Echo: ${lastMessage?.content || "Hello!"}`,
-      timestamp: Date.now()
-    };
+    const msgId = Math.random().toString(36).substring(7);
+    const contentText = typeof lastMessage?.content === "string"
+      ? lastMessage.content
+      : "Hello!";
 
-    this.messages.push(response);
-    
-    this.notifySubscribers(EventType.RUN_FINISHED, {
-      type: EventType.RUN_FINISHED,
-      timestamp: Date.now()
+    this.notifySubscribers(EventType.TEXT_MESSAGE_START, {
+      type: EventType.TEXT_MESSAGE_START,
+      messageId: msgId,
+      role: "assistant",
+      timestamp: Date.now(),
     });
 
-    this.subscribers.forEach(s => s.onMessagesChanged?.({
-      messages: this.messages,
-      state: this.state,
-      agent: this as any,
-    } as any));
+    this.notifySubscribers(EventType.TEXT_MESSAGE_CONTENT, {
+      type: EventType.TEXT_MESSAGE_CONTENT,
+      messageId: msgId,
+      delta: `Echo: ${contentText}`,
+      timestamp: Date.now(),
+    });
 
-    return { result: "ok", newMessages: [response] };
+    this.notifySubscribers(EventType.TEXT_MESSAGE_END, {
+      type: EventType.TEXT_MESSAGE_END,
+      messageId: msgId,
+      timestamp: Date.now(),
+    });
+
+    this.messages.push({
+      role: "assistant" as const,
+      id: msgId,
+      content: `Echo: ${contentText}`,
+    } as any);
+
+    this.notifySubscribers(EventType.RUN_FINISHED, {
+      type: EventType.RUN_FINISHED,
+      timestamp: Date.now(),
+    });
+
+    return { result: "ok", newMessages: [] };
   }
 
-  private notifySubscribers(type: EventType, event: any) {
+  private notifySubscribers(type: EventType, event: BaseEvent) {
     const params = {
       event,
       messages: this.messages,
       state: this.state,
       agent: this,
-      input: {} as any
+      input: {} as any,
     };
 
     this.subscribers.forEach(s => {
@@ -74,6 +87,6 @@ export class MockAgent extends AbstractAgent {
   }
 
   abortRun(): void {
-    console.log("Mock run aborted");
+    // no-op for mock
   }
 }

@@ -1,0 +1,17 @@
+/**
+ * @arnessa/agui-chat-sdk — SDK stylesheet
+ *
+ * Import this file in your app to use namespaced SDK CSS variables.
+ * Components also accept className props for full Tailwind override.
+ */
+
+:root {
+  --arn-chat-bg: var(--background, #fff);
+  --arn-chat-fg: var(--foreground, #111);
+  --arn-chat-primary: var(--primary, #3b5bdb);
+  --arn-chat-primary-fg: var(--primary-foreground, #fff);
+  --arn-chat-card: var(--card, #fff);
+  --arn-chat-border: var(--border, #e2e8f0);
+  --arn-chat-muted: var(--muted, #f1f5f9);
+  --arn-chat-muted-fg: var(--muted-foreground, #64748b);
+}

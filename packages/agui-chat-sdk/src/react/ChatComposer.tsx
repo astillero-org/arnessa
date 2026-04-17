@@ -1,9 +1,15 @@
-import React, { useMemo, useRef, useState } from 'react';
+'use client';
+
+import React, { useRef, useState } from 'react';
 import { AlertCircle, FileImage, FileText, Paperclip, SendHorizontal, X } from 'lucide-react';
-import { useChatActions, useChatState } from './ChatProvider';
+import { useChatActions, useChatOverrides, useChatState } from './ChatProvider';
 import { AttachmentDraft, fileToAttachmentDraft } from '../core/attachment-utils';
 
-export const ChatComposer: React.FC = () => {
+export interface ChatComposerProps {
+  className?: string;
+}
+
+export const ChatComposer: React.FC<ChatComposerProps> = ({ className }) => {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -11,6 +17,7 @@ export const ChatComposer: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { sendMessage } = useChatActions();
   const { runStatus, lastError } = useChatState();
+  const { labels } = useChatOverrides();
 
   const handleFiles = async (fileList: FileList | File[]) => {
     const files = Array.from(fileList || []);
@@ -19,7 +26,8 @@ export const ChatComposer: React.FC = () => {
     setAttachments((current) => [...current, ...mapped]);
   };
 
-  const removeAttachment = (id: string) => setAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  const removeAttachment = (id: string) =>
+    setAttachments((current) => current.filter((a) => a.id !== id));
 
   const resizeTextarea = () => {
     if (!textareaRef.current) return;
@@ -27,20 +35,20 @@ export const ChatComposer: React.FC = () => {
     textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
   };
 
-  const onSubmit = async (event: React.FormEvent) => {
+  const onSubmit = async (event: { preventDefault(): void }) => {
     event.preventDefault();
     if ((!text.trim() && attachments.length === 0) || runStatus === 'running') return;
     const currentText = text;
     const currentAttachments = attachments;
-    const payload = currentAttachments.length ? { text: currentText, attachments: currentAttachments } : currentText;
+    const payload = currentAttachments.length
+      ? { text: currentText, attachments: currentAttachments }
+      : currentText;
     setText('');
     setAttachments([]);
     requestAnimationFrame(resizeTextarea);
     try {
-      await sendMessage(payload as any);
-      currentAttachments.forEach((attachment) => {
-        if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
-      });
+      await sendMessage(payload);
+      currentAttachments.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
     } catch {
       setText(currentText);
       setAttachments(currentAttachments);
@@ -48,17 +56,19 @@ export const ChatComposer: React.FC = () => {
     }
   };
 
-  const dragProps = {
-    onDragEnter: (event: React.DragEvent) => { event.preventDefault(); setIsDragging(true); },
-    onDragOver: (event: React.DragEvent) => { event.preventDefault(); setIsDragging(true); },
-    onDragLeave: (event: React.DragEvent) => { event.preventDefault(); setIsDragging(false); },
-    onDrop: async (event: React.DragEvent) => { event.preventDefault(); setIsDragging(false); if (runStatus !== 'running') await handleFiles(event.dataTransfer.files); },
-  };
-
-  const attachmentLabel = useMemo(() => attachments.length ? `${attachments.length} adjunto${attachments.length > 1 ? 's' : ''}` : 'Adjuntar', [attachments.length]);
+  const attachLabel = attachments.length
+    ? `${attachments.length} file${attachments.length > 1 ? 's' : ''}`
+    : (labels.attachLabel);
 
   return (
-    <form onSubmit={onSubmit} className="border-t bg-background p-4" {...dragProps}>
+    <form
+      onSubmit={onSubmit}
+      className={className ?? 'border-t bg-background p-4'}
+      onDragEnter={(e) => { e.preventDefault(); setIsDragging(true); }}
+      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+      onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+      onDrop={async (e) => { e.preventDefault(); setIsDragging(false); if (runStatus !== 'running') await handleFiles(e.dataTransfer.files); }}
+    >
       {lastError ? (
         <div className="mb-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -68,8 +78,8 @@ export const ChatComposer: React.FC = () => {
 
       <div className={`rounded-3xl border bg-card shadow-sm transition-colors ${isDragging ? 'border-primary/40 ring-2 ring-primary/10' : 'border-border'}`}>
         <div className="flex items-center justify-between border-b px-4 py-2 text-[11px] text-muted-foreground">
-          <span>Arrastra imágenes o documentos aquí</span>
-          <span>{attachmentLabel}</span>
+          <span>{labels.dragHint}</span>
+          <span>{attachLabel}</span>
         </div>
 
         {attachments.length > 0 ? (
@@ -87,7 +97,12 @@ export const ChatComposer: React.FC = () => {
                   <p className="truncate text-sm font-medium">{attachment.name}</p>
                   <p className="text-xs text-muted-foreground">{Math.round(attachment.size / 1024)} KB</p>
                 </div>
-                <button type="button" className="absolute right-1.5 top-1.5 rounded-full p-1 text-muted-foreground opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100" onClick={() => removeAttachment(attachment.id)} aria-label={`Remove ${attachment.name}`}>
+                <button
+                  type="button"
+                  className="absolute right-1.5 top-1.5 rounded-full p-1 text-muted-foreground opacity-0 transition hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                  onClick={() => removeAttachment(attachment.id)}
+                  aria-label={`Remove ${attachment.name}`}
+                >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -96,7 +111,12 @@ export const ChatComposer: React.FC = () => {
         ) : null}
 
         <div className="flex items-end gap-2 p-3">
-          <button type="button" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border bg-muted/40 text-foreground transition hover:bg-muted" onClick={() => inputRef.current?.click()} aria-label="Adjuntar archivo">
+          <button
+            type="button"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border bg-muted/40 text-foreground transition hover:bg-muted"
+            onClick={() => inputRef.current?.click()}
+            aria-label={labels.attachLabel}
+          >
             <Paperclip className="h-4 w-4" />
           </button>
 
@@ -106,7 +126,7 @@ export const ChatComposer: React.FC = () => {
             rows={2}
             value={text}
             onChange={(e) => { setText(e.target.value); requestAnimationFrame(resizeTextarea); }}
-            placeholder="Describe lo que quieres crear..."
+            placeholder={labels.placeholder}
             disabled={runStatus === 'running'}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -114,16 +134,34 @@ export const ChatComposer: React.FC = () => {
                 void onSubmit(event);
               }
             }}
-            onPaste={async (event) => { const files = event.clipboardData.files; if (files?.length) { event.preventDefault(); await handleFiles(files); } }}
+            onPaste={async (event) => {
+              const files = event.clipboardData.files;
+              if (files?.length) { event.preventDefault(); await handleFiles(files); }
+            }}
           />
 
-          <button type="submit" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:opacity-50" disabled={runStatus === 'running' || (!text.trim() && attachments.length === 0)}>
+          <button
+            type="submit"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:opacity-50"
+            disabled={runStatus === 'running' || (!text.trim() && attachments.length === 0)}
+            aria-label={labels.sendLabel}
+          >
             <SendHorizontal className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      <input ref={inputRef} type="file" className="hidden" multiple onChange={async (event) => { if (event.target.files?.length) await handleFiles(event.target.files); event.currentTarget.value = ''; }} accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.svg" />
+      <input
+        ref={inputRef}
+        type="file"
+        className="hidden"
+        multiple
+        onChange={async (event) => {
+          if (event.target.files?.length) await handleFiles(event.target.files);
+          event.currentTarget.value = '';
+        }}
+        accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.svg"
+      />
     </form>
   );
 };

@@ -1,7 +1,10 @@
+'use client';
+
 import { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, ChevronDown, ChevronUp, Expand, FileImage, FileText, Sparkles, Terminal, User, X } from 'lucide-react';
+import { useChatOverrides } from './ChatProvider';
 
 type SourceLike = { type?: string; value?: string; mimeType?: string };
 type AttachmentLike = {
@@ -39,14 +42,17 @@ function sourceToUrl(source?: SourceLike): string | null {
 }
 
 function attachmentToNormalized(attachment: AttachmentLike): NormalizedAttachment | null {
-  const directUrl = typeof attachment.data === 'string' ? attachment.data : typeof attachment.url === 'string' ? attachment.url : typeof attachment.src === 'string' ? attachment.src : null;
+  const directUrl = typeof attachment.data === 'string' ? attachment.data
+    : typeof attachment.url === 'string' ? attachment.url
+    : typeof attachment.src === 'string' ? attachment.src
+    : null;
   const sourceUrl = sourceToUrl(attachment.source);
   const url = directUrl || sourceUrl;
   if (!url) return null;
 
   const mimeType = attachment.mime_type || attachment.source?.mimeType || attachment.type || 'application/octet-stream';
   const isImage = mimeType.startsWith('image/') || url.startsWith('data:image/');
-  const name = attachment.name || attachment.path?.split('/').pop() || (isImage ? 'Imagen' : 'Archivo');
+  const name = attachment.name || attachment.path?.split('/').pop() || (isImage ? 'Image' : 'File');
 
   return { name, mimeType, url, isImage };
 }
@@ -91,16 +97,16 @@ function normalizeContent(content: unknown): NormalizedContent {
   return { text: '', attachments: [] };
 }
 
-function ImageLightbox({ image, onClose }: { image: NormalizedAttachment | null; onClose: () => void }) {
+export function ImageLightbox({ image, onClose, closeLabel }: { image: NormalizedAttachment | null; onClose: () => void; closeLabel?: string }) {
   if (!image) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true" aria-label={image.name}>
       <button
         type="button"
         className="absolute inset-0 bg-black/80 backdrop-blur-sm"
         onClick={onClose}
-        aria-label="Cerrar visor de imagen"
+        aria-label={closeLabel ?? 'Close image viewer'}
       />
       <div className="relative z-10 flex w-[min(30vw,30rem)] max-w-[30vw] min-w-[18rem] flex-col overflow-hidden rounded-3xl border bg-background shadow-2xl">
         <div className="flex items-center justify-between border-b px-4 py-3">
@@ -112,10 +118,10 @@ function ImageLightbox({ image, onClose }: { image: NormalizedAttachment | null;
             type="button"
             className="inline-flex h-9 items-center justify-center rounded-xl border px-3 text-sm font-medium transition hover:bg-muted"
             onClick={onClose}
-            aria-label="Cerrar imagen"
+            aria-label={closeLabel ?? 'Close image'}
           >
             <X className="mr-1 h-4 w-4" />
-            Cerrar
+            {closeLabel ?? 'Close'}
           </button>
         </div>
         <div className="flex items-center justify-center bg-muted/30 p-4">
@@ -126,7 +132,7 @@ function ImageLightbox({ image, onClose }: { image: NormalizedAttachment | null;
   );
 }
 
-function AttachmentCard({ attachment }: { attachment: NormalizedAttachment }) {
+export function AttachmentCard({ attachment, closeLabel }: { attachment: NormalizedAttachment; closeLabel?: string }) {
   const [open, setOpen] = useState(false);
 
   if (attachment.isImage) {
@@ -134,7 +140,7 @@ function AttachmentCard({ attachment }: { attachment: NormalizedAttachment }) {
       <>
         <button
           type="button"
-          className="chat-output-attachment group relative w-full max-w-sm overflow-hidden rounded-2xl border bg-background text-left transition hover:border-primary/40 hover:shadow-sm"
+          className="max-w-full group relative w-full max-w-sm overflow-hidden rounded-2xl border bg-background text-left transition hover:border-primary/40 hover:shadow-sm"
           onClick={() => setOpen(true)}
         >
           <div className="aspect-[4/3] w-full bg-muted p-2">
@@ -151,7 +157,7 @@ function AttachmentCard({ attachment }: { attachment: NormalizedAttachment }) {
             <Expand className="h-4 w-4 text-muted-foreground transition group-hover:text-foreground" />
           </div>
         </button>
-        <ImageLightbox image={open ? attachment : null} onClose={() => setOpen(false)} />
+        <ImageLightbox image={open ? attachment : null} onClose={() => setOpen(false)} closeLabel={closeLabel} />
       </>
     );
   }
@@ -164,7 +170,7 @@ function AttachmentCard({ attachment }: { attachment: NormalizedAttachment }) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{attachment.name}</p>
-          <p className="text-xs text-muted-foreground">{attachment.mimeType || 'Archivo adjunto'}</p>
+          <p className="text-xs text-muted-foreground">{attachment.mimeType || 'Attachment'}</p>
         </div>
       </div>
     </div>
@@ -172,29 +178,107 @@ function AttachmentCard({ attachment }: { attachment: NormalizedAttachment }) {
 }
 
 export function EmptyState() {
-  return <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 p-10 text-center text-muted-foreground"><Sparkles className="h-10 w-10 text-primary" /><div><h3 className="text-lg font-semibold text-foreground">Empieza a diseñar</h3><p className="text-sm">Describe un mueble, una escena o una variación para ver el resultado aquí.</p></div></div>;
+  const { labels } = useChatOverrides();
+  return (
+    <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 p-10 text-center text-muted-foreground">
+      <Sparkles className="h-10 w-10 text-primary" />
+      <div>
+        <h3 className="text-lg font-semibold text-foreground">{labels.emptyTitle}</h3>
+        <p className="text-sm">{labels.emptySubtitle}</p>
+      </div>
+    </div>
+  );
 }
 
-export function MessageBubble({ content, role, timestamp }: { content: unknown; role: string; timestamp?: number }) {
+export function MessageBubble({ content, role, timestamp, className }: { content: unknown; role: string; timestamp?: number; className?: string }) {
   const isUser = role === 'user';
   const normalized = useMemo(() => normalizeContent(content), [content]);
+  const { labels } = useChatOverrides();
 
-  return <li className={`flex min-w-0 gap-3 ${isUser ? 'justify-start' : 'justify-end'}`}><div className={`chat-output-surface inline-flex min-w-0 gap-3 overflow-hidden rounded-3xl border p-4 ${isUser ? 'bg-primary text-primary-foreground' : 'bg-card'}`}><div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${isUser ? 'bg-primary-foreground/15' : 'bg-muted'}`}>{isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}</div><div className="min-w-0 space-y-3 overflow-hidden">
-    {normalized.text ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: (props) => <p className="break-words whitespace-pre-wrap text-sm leading-6" {...props} />, pre: (props) => <pre className="max-h-64 max-w-full overflow-x-auto overflow-y-auto rounded-xl bg-muted/40 p-3 text-xs leading-6 whitespace-pre-wrap" {...props} />, code: (props) => <code className="break-all whitespace-pre-wrap text-xs" {...props} /> }}>{normalized.text}</ReactMarkdown> : null}
-    {normalized.attachments.length > 0 ? <div className={`grid gap-2 ${normalized.attachments.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>{normalized.attachments.map((attachment, index) => <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />)}</div> : null}
-    {timestamp ? <p className="text-xs opacity-60">{new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p> : null}
-  </div></div></li>;
+  return (
+    <li className={className ?? `flex min-w-0 gap-3 ${isUser ? 'justify-start' : 'justify-end'}`}>
+      <div className={`w-fit max-w-[60%] inline-flex min-w-0 gap-3 overflow-hidden rounded-3xl border p-4 ${isUser ? 'bg-primary text-primary-foreground' : 'bg-card'}`}>
+        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${isUser ? 'bg-primary-foreground/15' : 'bg-muted'}`}>
+          {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+        </div>
+        <div className="min-w-0 space-y-3 overflow-hidden">
+          {normalized.text ? (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                p: (props) => <p className="break-words whitespace-pre-wrap text-sm leading-6" {...props} />,
+                pre: (props) => <pre className="max-h-64 max-w-full overflow-x-auto overflow-y-auto rounded-xl bg-muted/40 p-3 text-xs leading-6 whitespace-pre-wrap" {...props} />,
+                code: (props) => <code className="break-all whitespace-pre-wrap text-xs" {...props} />,
+              }}
+            >
+              {normalized.text}
+            </ReactMarkdown>
+          ) : null}
+          {normalized.attachments.length > 0 ? (
+            <div className={`grid gap-2 ${normalized.attachments.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+              {normalized.attachments.map((attachment, index) => (
+                <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} closeLabel={labels.closeImageLabel} />
+              ))}
+            </div>
+          ) : null}
+          {timestamp ? <p className="text-xs opacity-60">{formatTimestamp(timestamp)}</p> : null}
+        </div>
+      </div>
+    </li>
+  );
 }
 
-export function ToolResultCard({ content, toolName, timestamp }: { content: string; toolName?: string; timestamp?: number }) {
+export function ToolResultCard({ content, toolName, timestamp, className }: { content: string; toolName?: string; timestamp?: number; className?: string }) {
   const [open, setOpen] = useState(false);
-  return <div className="chat-output-surface min-w-0 rounded-2xl border bg-card"><button type="button" className="flex w-full min-w-0 items-center gap-3 p-4 text-left" onClick={() => setOpen(v => !v)}><Terminal className="h-4 w-4" /><div className="min-w-0 flex-1"><div className="text-xs uppercase tracking-wide text-muted-foreground">Tool</div><div className="truncate text-sm font-medium">{toolName || 'Resultado'}</div>{timestamp ? <div className="mt-1 text-xs text-muted-foreground">{formatTimestamp(timestamp)}</div> : null}</div>{open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>{open ? <pre className="max-h-80 overflow-x-auto overflow-y-auto border-t p-4 text-xs leading-6 whitespace-pre">{content}</pre> : null}</div>;
+  const { labels } = useChatOverrides();
+  return (
+    <div className={className ?? 'w-fit max-w-[60%] min-w-0 rounded-2xl border bg-card'}>
+      <button type="button" className="flex w-full min-w-0 items-center gap-3 p-4 text-left" onClick={() => setOpen(v => !v)}>
+        <Terminal className="h-4 w-4" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">Tool</div>
+          <div className="truncate text-sm font-medium">{toolName || labels.toolResultDefault}</div>
+          {timestamp ? <div className="mt-1 text-xs text-muted-foreground">{formatTimestamp(timestamp)}</div> : null}
+        </div>
+        {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+      {open ? <pre className="max-h-80 overflow-x-auto overflow-y-auto border-t p-4 text-xs leading-6 whitespace-pre">{content}</pre> : null}
+    </div>
+  );
 }
 
-export function ActivityIndicator({ label, timestamp }: { label: string; timestamp?: number }) { return <div className="chat-output-pill rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground"><span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />{label}{timestamp ? <span className="text-[11px] opacity-70"> • {formatTimestamp(timestamp)}</span> : null}</div>; }
+export function ActivityIndicator({ label, timestamp, className }: { label: string; timestamp?: number; className?: string }) {
+  return (
+    <div className={className ?? 'w-fit max-w-[60%] rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground'}>
+      <span className="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
+      {label}
+      {timestamp ? <span className="text-[11px] opacity-70"> • {formatTimestamp(timestamp)}</span> : null}
+    </div>
+  );
+}
 
-export function CustomEventRenderer({ name, value, timestamp }: { name: string; value: unknown; timestamp?: number }) {
+export function CustomEventRenderer({ name, value, timestamp, className }: { name: string; value: unknown; timestamp?: number; className?: string }) {
   const normalized = useMemo(() => normalizeContent(value), [value]);
 
-  return <div className="chat-output-surface min-w-0 rounded-2xl border border-dashed p-4 text-sm"><div className="flex items-center justify-between gap-3"><div className="text-xs uppercase tracking-wide text-muted-foreground">{name}</div>{timestamp ? <div className="text-xs text-muted-foreground">{formatTimestamp(timestamp)}</div> : null}</div>{normalized.attachments.length > 0 ? <div className={`mt-3 grid gap-2 ${normalized.attachments.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>{normalized.attachments.map((attachment, index) => <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />)}</div> : null}{normalized.text ? <pre className="mt-2 overflow-x-auto overflow-y-auto text-xs whitespace-pre">{normalized.text}</pre> : null}{!normalized.text && normalized.attachments.length === 0 ? <pre className="mt-2 overflow-x-auto overflow-y-auto text-xs whitespace-pre">{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</pre> : null}</div>;
+  return (
+    <div className={className ?? 'w-fit max-w-[60%] min-w-0 rounded-2xl border border-dashed p-4 text-sm'}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">{name}</div>
+        {timestamp ? <div className="text-xs text-muted-foreground">{formatTimestamp(timestamp)}</div> : null}
+      </div>
+      {normalized.attachments.length > 0 ? (
+        <div className={`mt-3 grid gap-2 ${normalized.attachments.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+          {normalized.attachments.map((attachment, index) => (
+            <AttachmentCard key={`${attachment.name}-${index}`} attachment={attachment} />
+          ))}
+        </div>
+      ) : null}
+      {normalized.text ? <pre className="mt-2 overflow-x-auto overflow-y-auto text-xs whitespace-pre">{normalized.text}</pre> : null}
+      {!normalized.text && normalized.attachments.length === 0 ? (
+        <pre className="mt-2 overflow-x-auto overflow-y-auto text-xs whitespace-pre">
+          {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+        </pre>
+      ) : null}
+    </div>
+  );
 }

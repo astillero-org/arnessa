@@ -3,39 +3,52 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./src/index.ts",
       "development": "./src/index.ts",
-      "import": "./dist/index.js",
-      "types": "./src/index.ts"
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./src/react/index.ts",
+      "development": "./src/react/index.ts",
+      "import": "./dist/react/index.js"
     },
     "./styles.css": "./dist/styles.css"
   },
+  "files": ["dist"],
+  "typesVersions": {
+    "*": {
+      "react": ["./src/react/index.ts"]
+    }
+  },
+  "sideEffects": ["./dist/styles.css"],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts --format esm --watch --dts",
+    "build": "tsup",
+    "dev": "tsup --watch",
     "lint": "eslint src",
     "test": "vitest run"
   },
   "dependencies": {
-    "@ag-ui/client": "0.0.52",
-    "@ag-ui/core": "0.0.52",
     "clsx": "^2.1.1",
     "lucide-react": "^0.300.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "rxjs": "7.8.1",
-    "tailwind-merge": "^2.6.1",
-    "zod": "^3.22.4"
+    "tailwind-merge": "^2.6.1"
   },
   "peerDependencies": {
+    "@ag-ui/client": ">=0.0.52",
+    "@ag-ui/core": ">=0.0.52",
     "react": ">=18",
     "react-dom": ">=18"
   },
   "devDependencies": {
+    "@ag-ui/client": "0.0.52",
+    "@ag-ui/core": "0.0.52",
     "@eslint/js": "^10.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",

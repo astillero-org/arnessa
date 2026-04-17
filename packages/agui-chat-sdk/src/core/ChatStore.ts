@@ -1,33 +1,13 @@
-import { BaseEvent, Message, ActivityMessage, EventType } from "@ag-ui/core";
-
-export type SDKMessage = any; // Using any for now to avoid complex union issues with SDK-specific properties
-
-export type TimelineItem =
-  | { kind: "message"; id: string; timestamp: number; order: number; message: SDKMessage }
-  | { kind: "activity"; id: string; timestamp: number; order: number; message: SDKMessage }
-  | { kind: "custom"; name: string; value: unknown; timestamp: number; id: string; order: number };
-
-export interface ChatState {
-  timeline: TimelineItem[];
-  runStatus: "idle" | "running" | "error";
-  lastError: Error | null;
-  threadId: string | null;
-}
-
-export interface ConversationSnapshot {
-  id: string;
-  title: string;
-  threadId: string | null;
-  timeline: TimelineItem[];
-  updatedAt: number;
-}
-
-export type ChatListener = (state: ChatState) => void;
-
-export type ChatEventHandler<T extends BaseEvent = any> = (
-  event: T,
-  state: ChatState
-) => ChatState;
+import { BaseEvent, EventType } from "@ag-ui/core";
+import {
+  TimelineItem,
+  ChatState,
+  ConversationSnapshot,
+  ChatListener,
+  ChatEventHandler,
+  MessageItemMessage,
+  ActivityItemMessage,
+} from "./types";
 
 export class ChatStore {
   private state: ChatState = {
@@ -70,22 +50,37 @@ export class ChatStore {
     return timestamp || Date.now();
   }
 
-  private createMessageItem(kind: "message" | "activity", message: SDKMessage, fallbackId: string, timestamp?: number): TimelineItem {
+  private createMessageItem(
+    kind: "message",
+    message: MessageItemMessage,
+    fallbackId: string,
+    timestamp?: number
+  ): Extract<TimelineItem, { kind: "message" }>;
+  private createMessageItem(
+    kind: "activity",
+    message: ActivityItemMessage,
+    fallbackId: string,
+    timestamp?: number
+  ): Extract<TimelineItem, { kind: "activity" }>;
+  private createMessageItem(
+    kind: "message" | "activity",
+    message: MessageItemMessage | ActivityItemMessage,
+    fallbackId: string,
+    timestamp?: number
+  ): TimelineItem {
     const normalizedTimestamp = this.normalizeTimestamp(timestamp || message.timestamp);
     const id = message.id || fallbackId;
-    message.id = id;
-    message.timestamp = normalizedTimestamp;
 
     return {
       kind,
       id,
       timestamp: normalizedTimestamp,
       order: this.getNextOrder(),
-      message,
-    };
+      message: { ...message, id, timestamp: normalizedTimestamp },
+    } as TimelineItem;
   }
 
-  private createCustomItem(event: any): TimelineItem {
+  private createCustomItem(event: { name: string; value: unknown; timestamp?: number; id?: string }): Extract<TimelineItem, { kind: "custom" }> {
     return {
       kind: "custom",
       name: event.name,
@@ -126,7 +121,7 @@ export class ChatStore {
         order: item.order || fallbackOrder,
         message,
       };
-    });
+    }) as TimelineItem[];
 
     this.syncNextOrderFromTimeline(normalized);
     return normalized.sort((a, b) => a.order - b.order);
@@ -134,17 +129,18 @@ export class ChatStore {
 
   private getItemSignature(item: TimelineItem): string {
     if (item.kind === "custom") {
-      const value = item.value as any;
-      return `custom:${item.name}:${value?.path || value?.data || this.normalizeContentSignature(item.value)}`;
+      const value = item.value as Record<string, unknown>;
+      return `custom:${item.name}:${String(value?.path || value?.data || this.normalizeContentSignature(item.value))}`;
     }
 
-    const message = item.message as any;
     if (item.kind === "activity") {
-      return `activity:${message.activityType}:${this.normalizeContentSignature(message.content)}`;
+      const msg = item.message;
+      return `activity:${msg.activityType}:${this.normalizeContentSignature(msg.content)}`;
     }
 
-    const toolKey = message.toolCallId || `${message.toolName || ""}:${this.normalizeContentSignature(message.content)}`;
-    return `message:${message.role}:${toolKey}:${this.normalizeContentSignature(message.content)}`;
+    const msg = item.message;
+    const toolKey = msg.toolCallId || `${msg.toolName || ""}:${this.normalizeContentSignature(msg.content)}`;
+    return `message:${msg.role}:${toolKey}:${this.normalizeContentSignature(msg.content)}`;
   }
 
   private dedupeTimeline(items: TimelineItem[]): TimelineItem[] {
@@ -170,20 +166,21 @@ export class ChatStore {
   private hasRenderableContent(content: unknown): boolean {
     if (typeof content === "string") return content.trim().length > 0;
     if (Array.isArray(content)) {
-      return content.some((item: any) => {
+      return content.some((item: unknown) => {
         if (!item || typeof item !== "object") return false;
-        if (item.type === "text") return Boolean(String(item.text || "").trim());
-        return Boolean(item.source?.value || item.data || item.url || item.src);
+        const value = item as Record<string, unknown>;
+        if (value.type === "text") return Boolean(String(value.text || "").trim());
+        return Boolean(value.source || value.data || value.url || value.src);
       });
     }
     if (content && typeof content === "object") {
-      const value = content as any;
+      const value = content as Record<string, unknown>;
       return Boolean(
         String(value.text || value.content || "").trim() ||
         value.data ||
         value.url ||
         value.src ||
-        value.source?.value ||
+        (value.source as Record<string, unknown> | undefined)?.value ||
         (Array.isArray(value.attachments) && value.attachments.length > 0) ||
         (Array.isArray(value.images) && value.images.length > 0)
       );
@@ -194,8 +191,7 @@ export class ChatStore {
   private pruneGhostMessages(items: TimelineItem[]): TimelineItem[] {
     return items.filter((item) => {
       if (item.kind !== "message") return true;
-      const role = item.message.role;
-      if (role !== "assistant") return true;
+      if (item.message.role !== "assistant") return true;
       return this.hasRenderableContent(item.message.content);
     });
   }
@@ -203,74 +199,70 @@ export class ChatStore {
   private registerDefaultHandlers() {
     this.registerHandler(EventType.RUN_STARTED, (event, state) => ({
       ...state,
-      runStatus: "running",
+      runStatus: "running" as const,
       lastError: null,
-      threadId: state.threadId || (event as any).threadId || null,
+      threadId: state.threadId || (event as Record<string, unknown>).threadId as string | null || null,
     }));
 
-    this.registerHandler(EventType.RUN_FINISHED, (event, state) => ({
+    this.registerHandler(EventType.RUN_FINISHED, (_event, state) => ({
       ...state,
-      runStatus: "idle",
+      runStatus: "idle" as const,
       timeline: this.pruneGhostMessages(state.timeline),
     }));
 
-    this.registerHandler(EventType.RUN_ERROR, (event: any, state) => ({
+    this.registerHandler(EventType.RUN_ERROR, (event, state) => ({
       ...state,
-      runStatus: "error",
-      lastError: new Error(event.error || "Run failed"),
+      runStatus: "error" as const,
+      lastError: new Error((event as Record<string, unknown>).error as string || "Run failed"),
       timeline: this.pruneGhostMessages(state.timeline),
     }));
 
-    this.registerHandler(EventType.TEXT_MESSAGE_START, (event: any, state) => {
-      // Check if message already exists
-      if (state.timeline.some(item => item.kind === 'message' && item.message.id === event.messageId)) {
+    this.registerHandler(EventType.TEXT_MESSAGE_START, (event, state) => {
+      const e = event as Record<string, unknown>;
+      if (state.timeline.some(item => item.kind === "message" && item.message.id === e.messageId)) {
         return state;
       }
-
-      const newMessage: SDKMessage = {
-        role: event.role || "assistant",
-        content: event.content || "",
-        id: event.messageId,
-        timestamp: this.normalizeTimestamp(event.timestamp)
+      const newMessage: MessageItemMessage = {
+        role: (e.role as string) || "assistant",
+        content: (e.content as string) || "",
+        id: e.messageId as string,
+        timestamp: this.normalizeTimestamp(e.timestamp as number | undefined),
       };
-      
       return {
         ...state,
-        threadId: state.threadId || event.threadId || event.conversationId || null,
-        timeline: [...state.timeline, this.createMessageItem("message", newMessage, event.messageId, event.timestamp)]
+        threadId: state.threadId || (e.threadId as string) || (e.conversationId as string) || null,
+        timeline: [...state.timeline, this.createMessageItem("message", newMessage, e.messageId as string, e.timestamp as number | undefined)],
       };
     });
 
-    this.registerHandler(EventType.TEXT_MESSAGE_CONTENT, (event: any, state) => {
-      const exists = state.timeline.some(item => item.kind === "message" && item.message.id === event.messageId);
-      const delta = event.delta || event.content || "";
-      
-      if (!exists) {
-        // If it's pure whitespace and doesn't exist, ignore it until real content arrives
-        if (!delta.trim()) return state;
+    this.registerHandler(EventType.TEXT_MESSAGE_CONTENT, (event, state) => {
+      const e = event as Record<string, unknown>;
+      const exists = state.timeline.some(item => item.kind === "message" && item.message.id === e.messageId);
+      const delta = (e.delta as string) || (e.content as string) || "";
 
-        const newMessage: SDKMessage = {
+      if (!exists) {
+        if (!delta.trim()) return state;
+        const newMessage: MessageItemMessage = {
           role: "assistant",
           content: delta,
-          id: event.messageId,
-          timestamp: this.normalizeTimestamp(event.timestamp)
+          id: e.messageId as string,
+          timestamp: this.normalizeTimestamp(e.timestamp as number | undefined),
         };
         return {
           ...state,
-          threadId: state.threadId || event.threadId || event.conversationId || null,
-          timeline: [...state.timeline, this.createMessageItem("message", newMessage, event.messageId, event.timestamp)]
+          threadId: state.threadId || (e.threadId as string) || (e.conversationId as string) || null,
+          timeline: [...state.timeline, this.createMessageItem("message", newMessage, e.messageId as string, e.timestamp as number | undefined)],
         };
       }
 
       const newTimeline = state.timeline.map(item => {
-        if (item.kind === "message" && item.message.id === event.messageId) {
+        if (item.kind === "message" && item.message.id === e.messageId) {
           return {
             ...item,
             message: {
               ...item.message,
-              timestamp: item.timestamp,
-              content: (item.message.content || "") + delta
-            }
+              content: (String(item.message.content || "")) + delta,
+            },
           };
         }
         return item;
@@ -278,38 +270,35 @@ export class ChatStore {
       return { ...state, timeline: newTimeline };
     });
 
-    this.registerHandler(EventType.TOOL_CALL_START, (event: any, state) => {
-      this.toolNames.set(event.toolCallId, event.toolCallName);
-      
-      // Add a placeholder for the tool call
-      const toolMessage: SDKMessage = {
+    this.registerHandler(EventType.TOOL_CALL_START, (event, state) => {
+      const e = event as Record<string, unknown>;
+      this.toolNames.set(e.toolCallId as string, e.toolCallName as string);
+      const toolMessage: MessageItemMessage = {
         role: "tool",
-        content: `Calling ${event.toolCallName}...`,
-        id: `tool-${event.toolCallId}`,
-        toolCallId: event.toolCallId,
-        toolName: event.toolCallName,
-        timestamp: this.normalizeTimestamp(event.timestamp)
+        content: `Calling ${e.toolCallName as string}...`,
+        id: `tool-${e.toolCallId as string}`,
+        toolCallId: e.toolCallId as string,
+        toolName: e.toolCallName as string,
+        timestamp: this.normalizeTimestamp(e.timestamp as number | undefined),
       };
       return {
         ...state,
-        timeline: [...state.timeline, this.createMessageItem("message", toolMessage, `tool-${event.toolCallId}`, event.timestamp)]
+        timeline: [...state.timeline, this.createMessageItem("message", toolMessage, `tool-${e.toolCallId as string}`, e.timestamp as number | undefined)],
       };
     });
 
-    this.registerHandler(EventType.TOOL_CALL_RESULT, (event: any, state) => {
-      const toolName = this.toolNames.get(event.toolCallId);
-      
+    this.registerHandler(EventType.TOOL_CALL_RESULT, (event, state) => {
+      const e = event as Record<string, unknown>;
+      const toolName = this.toolNames.get(e.toolCallId as string);
       const newTimeline = state.timeline.map(item => {
-        if (item.kind === "message" && item.message.toolCallId === event.toolCallId) {
+        if (item.kind === "message" && item.message.toolCallId === (e.toolCallId as string)) {
           return {
             ...item,
             message: {
               ...item.message,
-              role: "tool" as const,
               toolName: toolName || item.message.toolName,
-              timestamp: item.timestamp,
-              content: typeof event.content === 'string' ? event.content : JSON.stringify(event.content, null, 2)
-            }
+              content: typeof e.content === "string" ? e.content : JSON.stringify(e.content, null, 2),
+            },
           };
         }
         return item;
@@ -317,31 +306,37 @@ export class ChatStore {
       return { ...state, timeline: newTimeline };
     });
 
-    this.registerHandler(EventType.CUSTOM, (event: any, state) => {
-      const customItem = this.createCustomItem(event);
-
+    this.registerHandler(EventType.CUSTOM, (event, state) => {
+      const e = event as Record<string, unknown>;
+      const customItem = this.createCustomItem({
+        name: e.name as string,
+        value: e.value,
+        timestamp: e.timestamp as number | undefined,
+        id: e.id as string | undefined,
+      });
       return {
         ...state,
         timeline: this.dedupeTimeline([...state.timeline, customItem]),
       };
     });
 
-    this.registerHandler(EventType.ACTIVITY_SNAPSHOT, (event: any, state) => {
-      const activity: SDKMessage = {
+    this.registerHandler(EventType.ACTIVITY_SNAPSHOT, (event, state) => {
+      const e = event as Record<string, unknown>;
+      const activity: ActivityItemMessage = {
         role: "activity",
-        id: event.messageId,
-        activityType: event.activityType,
-        content: event.content,
-        timestamp: this.normalizeTimestamp(event.timestamp)
+        id: e.messageId as string,
+        activityType: e.activityType as string | undefined,
+        content: e.content,
+        timestamp: this.normalizeTimestamp(e.timestamp as number | undefined),
       };
-      
-      const index = state.timeline.findIndex(i => i.kind === 'activity' && i.message.id === event.messageId);
+
+      const index = state.timeline.findIndex(i => i.kind === "activity" && i.message.id === (e.messageId as string));
       const newTimeline = [...state.timeline];
       if (index >= 0) {
         const existing = newTimeline[index] as Extract<TimelineItem, { kind: "activity" }>;
         newTimeline[index] = { ...existing, message: { ...activity, timestamp: existing.timestamp } };
       } else {
-        newTimeline.push(this.createMessageItem("activity", activity, event.messageId, event.timestamp));
+        newTimeline.push(this.createMessageItem("activity", activity, e.messageId as string, e.timestamp as number | undefined));
       }
       return { ...state, timeline: this.dedupeTimeline(newTimeline) };
     });
@@ -370,10 +365,22 @@ export class ChatStore {
     this.notify();
   }
 
+  public addUserMessage(message: { id: string; role: string; content: unknown; timestamp: number }) {
+    const item = this.createMessageItem(
+      "message",
+      { id: message.id, role: message.role, content: message.content, timestamp: message.timestamp },
+      message.id,
+      message.timestamp
+    );
+    this.state = { ...this.state, timeline: [...this.state.timeline, item] };
+    this.notify();
+  }
+
   public hydrateConversation(snapshot: Pick<ConversationSnapshot, "timeline" | "threadId">) {
+    const normalized = this.normalizeTimelineItems([...snapshot.timeline]);
     this.state = {
       ...this.state,
-      timeline: this.normalizeTimelineItems([...snapshot.timeline]),
+      timeline: normalized,
       threadId: snapshot.threadId,
       runStatus: "idle",
       lastError: null,
@@ -399,61 +406,6 @@ export class ChatStore {
       this.notify();
     }
   }
-
-  public setTimeline(messages: SDKMessage[]) {
-    const existingTimeline = [...this.state.timeline];
-    const timeline = [...existingTimeline];
-    const messageIndex = new Map<string, number>();
-
-    timeline.forEach((item, index) => {
-      if (item.kind === 'message' || item.kind === 'activity') {
-        const message = item.message as any;
-        if (message.id) messageIndex.set(`id:${message.id}`, index);
-        if (message.role === 'tool' && message.toolCallId) messageIndex.set(`tool:${message.toolCallId}`, index);
-      }
-    });
-
-    messages.forEach((m) => {
-      const fallbackId = m.id || (m.role === 'tool' && m.toolCallId ? `tool-${m.toolCallId}` : `${m.role}-${Math.random().toString(36).slice(2, 8)}`);
-      const keyById = m.id ? `id:${m.id}` : null;
-      const keyByTool = m.role === 'tool' && m.toolCallId ? `tool:${m.toolCallId}` : null;
-      const existingIndex = (keyById && messageIndex.has(keyById)) ? messageIndex.get(keyById)! : (keyByTool && messageIndex.has(keyByTool) ? messageIndex.get(keyByTool)! : -1);
-
-      if (m.role === 'tool' && !m.toolName) {
-        m.toolName = this.toolNames.get(m.toolCallId) || m.toolName;
-      }
-
-      if (existingIndex >= 0) {
-        const existing = timeline[existingIndex] as Extract<TimelineItem, { kind: 'message' | 'activity' }>;
-        const timestamp = existing.timestamp || this.normalizeTimestamp(m.timestamp);
-        const mergedMessage = {
-          ...existing.message,
-          ...m,
-          id: existing.id || m.id || fallbackId,
-          timestamp,
-        };
-        timeline[existingIndex] = {
-          ...existing,
-          message: mergedMessage,
-          id: mergedMessage.id,
-          timestamp,
-        } as TimelineItem;
-        return;
-      }
-
-      const kind = m.role === 'activity' ? 'activity' : 'message';
-      const newItem = this.createMessageItem(kind, { ...m }, fallbackId, m.timestamp) as Extract<TimelineItem, { kind: 'message' | 'activity' }>;
-      timeline.push(newItem);
-      messageIndex.set(`id:${newItem.id}`, timeline.length - 1);
-      if ((newItem.message as any).role === 'tool' && (newItem.message as any).toolCallId) {
-        messageIndex.set(`tool:${(newItem.message as any).toolCallId}`, timeline.length - 1);
-      }
-    });
-
-    this.state = {
-      ...this.state,
-      timeline: this.pruneGhostMessages(this.dedupeTimeline(timeline).sort((a, b) => a.order - b.order))
-    };
-    this.notify();
-  }
 }
+
+export type { TimelineItem, ChatState, ConversationSnapshot, ChatListener, ChatEventHandler };
