@@ -1,5 +1,6 @@
 from pydantic_ai import Agent
 from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
 
 from arnessa.agent import ArnessaAgentBuilder
 
@@ -13,6 +14,15 @@ assert DEFAULT_BACKEND is not None, "DEFAULT_BACKEND must be set to a valid Loca
 agent = ArnessaAgentBuilder().create()
 
 app = agent.to_ag_ui(deps=ArnessaDeps(backend=backend))
+
+# Add CORS middleware to allow the frontend to connect
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For development, we allow all origins. Change to specific origin in production.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def main():
     import uvicorn

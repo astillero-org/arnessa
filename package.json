@@ -1,0 +1,10 @@
+{
+  "name": "arnessa-frontend-monorepo",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

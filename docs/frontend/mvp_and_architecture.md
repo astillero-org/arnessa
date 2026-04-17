@@ -266,7 +266,38 @@ packages/
 		unit/
 		integration/
 
-## 11. Criterios de aceptación del MVP
+## 11. Configuración y entorno
+
+El SDK y la demo app deben ser completamente configurables sin tocar código, tanto en tiempo de build como en runtime donde aplique.
+
+### 11.1 Variables configurables
+
+1. URL del backend AG-UI (endpoint base).
+2. Cualquier header o token de autenticación estático requerido por el backend.
+3. Feature flags básicos (e.g., historial habilitado, modo debug).
+4. Identificadores de tenant o contexto para whitelabeling.
+
+### 11.2 Mecanismo
+
+1. **Build time**: variables de entorno `NEXT_PUBLIC_*` en Next.js (`.env.local`, `.env.production`, etc.). Permiten baking de URLs y configuración en el bundle sin exponer secretos de servidor.
+2. **Runtime (SDK embebido)**: `ChatSDKOptions` pasadas como props al `ChatProvider`, para que hosts externos puedan inyectar la URL del backend y cualquier config dinámica en su propia app.
+3. Las variables de entorno tienen precedencia sobre defaults, y las props del SDK tienen precedencia sobre las variables de entorno cuando el SDK se embebe en una app host.
+4. No se hardcodea ninguna URL, token ni identificador de entorno en código fuente.
+
+### 11.3 Convención de nombres de variables de entorno
+
+| Variable | Descripción |
+|---|---|
+| `NEXT_PUBLIC_AGUI_BASE_URL` | URL base del backend AG-UI |
+| `NEXT_PUBLIC_AGUI_TENANT_ID` | Identificador de tenant (opcional) |
+| `NEXT_PUBLIC_FEATURE_HISTORY` | Activa/desactiva historial (`true`/`false`) |
+
+### 11.4 Testing con configuración
+
+1. MSW intercepta la URL configurada, no una hardcodeada, para validar que el mecanismo funciona de punta a punta.
+2. Prueba explícita: arrancar SDK con URL distinta y verificar que la petición va al endpoint correcto.
+
+## 12. Criterios de aceptación del MVP
 
 1. El SDK puede conectarse a un backend AG-UI y renderizar respuestas en streaming.
 2. Existe componente FullScreenChat funcional con historial.
@@ -274,11 +305,13 @@ packages/
 4. SideChatWidget implementa navegación Back hacia historial dentro del propio componente.
 5. El demo app monta ambos modos (full y side) sin duplicar lógica core.
 6. El repositorio incluye pipeline de pruebas first-test then code con unit, integration y e2e.
+7. Ninguna URL, token ni parámetro de entorno está hardcodeado; todo es configurable vía variables de entorno o props del SDK.
 
 ## 12. Roadmap inmediato
 
 1. Crear scaffolding de packages/agui-chat-sdk y apps/chat-demo.
-2. Configurar testing stack al inicio (Vitest, Testing Library, MSW, Playwright, axe).
-3. Implementar Fase 1 y Fase 2 con TDD.
-4. Construir componentes FullScreenChat y SideChatWidget con shadcn/ui.
-5. Cerrar con pruebas e2e y documentación de integración en host apps.
+2. Configurar variables de entorno y mecanismo de configuración desde el inicio (`.env.local`, `ChatSDKOptions`).
+3. Configurar testing stack al inicio (Vitest, Testing Library, MSW, Playwright, axe).
+4. Implementar Fase 1 y Fase 2 con TDD.
+5. Construir componentes FullScreenChat y SideChatWidget con shadcn/ui.
+6. Cerrar con pruebas e2e y documentación de integración en host apps.

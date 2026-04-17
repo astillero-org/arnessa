@@ -19,7 +19,7 @@ dependencies = [
     "pydantic-ai-backend>=0.2.4",
     "pydantic-ai-backend[console]>=0.2.4",
     "pydantic-ai-harness>=0.1.1",
-    "rembg>=2.0.75",
+    "rembg[cpu]>=2.0.75",
     "pydantic-ai-harness[code-mode]>=0.1.1",
 ]
 

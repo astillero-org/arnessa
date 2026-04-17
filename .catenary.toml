@@ -1,0 +1,13 @@
+[server.ty]
+command = "ty"
+args = ["server"]
+
+[language.python]
+servers = ["ty"]
+
+[server.tsserver]
+command = "typescript-language-server"
+args = ["--stdio"]
+
+[language.javascript]
+servers = ["tsserver"]
