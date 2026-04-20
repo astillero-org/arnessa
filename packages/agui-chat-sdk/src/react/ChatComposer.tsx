@@ -86,13 +86,23 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({ className }) => {
           <div className="flex gap-2 overflow-x-auto border-b px-3 py-3">
             {attachments.map((attachment) => (
               <div key={attachment.id} className="group relative flex w-44 shrink-0 gap-3 rounded-2xl border bg-background p-2.5">
-                {attachment.previewUrl ? (
-                  <img src={attachment.previewUrl} alt={attachment.name} className="h-12 w-12 rounded-xl object-cover" />
-                ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
-                    {attachment.type.startsWith('image/') ? <FileImage className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
-                  </div>
-                )}
+                <div
+                  className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted"
+                  style={{ width: 48, height: 48, minWidth: 48, minHeight: 48, maxWidth: 48, maxHeight: 48 }}
+                >
+                  {attachment.previewUrl ? (
+                    <img
+                      src={attachment.previewUrl}
+                      alt={attachment.name}
+                      className="h-full w-full object-cover"
+                      style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      {attachment.type.startsWith('image/') ? <FileImage className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                    </div>
+                  )}
+                </div>
                 <div className="min-w-0 flex-1 pr-5">
                   <p className="truncate text-sm font-medium">{attachment.name}</p>
                   <p className="text-xs text-muted-foreground">{Math.round(attachment.size / 1024)} KB</p>

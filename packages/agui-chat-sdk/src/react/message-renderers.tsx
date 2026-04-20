@@ -140,11 +140,11 @@ export function AttachmentCard({ attachment, closeLabel }: { attachment: Normali
       <>
         <button
           type="button"
-          className="max-w-full group relative w-full max-w-sm overflow-hidden rounded-2xl border bg-background text-left transition hover:border-primary/40 hover:shadow-sm"
+          className="arn-chat-attachment-image group relative shrink-0 overflow-hidden rounded-2xl border bg-background text-left transition hover:border-primary/40 hover:shadow-sm"
           onClick={() => setOpen(true)}
         >
-          <div className="aspect-[4/3] w-full bg-muted p-2">
-            <img src={attachment.url} alt={attachment.name} className="h-full w-full rounded-xl object-contain" />
+          <div className="arn-chat-attachment-image__preview">
+            <img src={attachment.url} alt={attachment.name} className="arn-chat-attachment-image__img" />
           </div>
           <div className="flex items-center gap-3 p-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted">
@@ -196,7 +196,7 @@ export function MessageBubble({ content, role, timestamp, className }: { content
   const { labels } = useChatOverrides();
 
   return (
-    <li className={className ?? `flex min-w-0 gap-3 ${isUser ? 'justify-start' : 'justify-end'}`}>
+    <li className={`${className ?? `flex min-w-0 gap-3 ${isUser ? 'justify-start' : 'justify-end'}`} arn-chat-message-bubble`}>
       <div className={`w-fit max-w-[60%] inline-flex min-w-0 gap-3 overflow-hidden rounded-3xl border p-4 ${isUser ? 'bg-primary text-primary-foreground' : 'bg-card'}`}>
         <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${isUser ? 'bg-primary-foreground/15' : 'bg-muted'}`}>
           {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
