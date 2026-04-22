@@ -18,15 +18,15 @@ Your code
   ├── pydantic_ai.Agent
   │     └── capabilities=[AgentState(...), DeferredCalls(), DynamicUI()]
   │
-  ├── arnessa.pydanticai.capabilities   ← AbstractCapability subclasses
+  ├── arnessa.capabilities   ← AbstractCapability subclasses
   │     ├── AgentState                  ← typed state tools + state_changed events
   │     ├── DeferredCalls              ← suspend/resume tool calls via client
   │     └── DynamicUI                  ← mount/update/unmount components in slots
   │
-  ├── arnessa.pydanticai.deps           ← ArnessaDeps (StateHandler subclass)
+  ├── arnessa.deps           ← ArnessaDeps (StateHandler subclass)
   │     └── subclass with your own fields (state, db, current_user, etc.)
   │
-  └── arnessa.pydanticai.publish        ← ASGI/FastAPI publish adapters
+  └── arnessa.publish        ← ASGI/FastAPI publish adapters
         └── AG-UI-compatible SSE + Arnessa event extensions
               │
               │   (over HTTP / SSE)
@@ -40,12 +40,12 @@ Your code
 
 ---
 
-### `arnessa.pydanticai.deps`
+### `arnessa.deps`
 
 `ArnessaDeps` is the typed dependency base that Arnessa capabilities operate against. It is deliberately coupled to PydanticAI's deps model and `StateHandler`. It is not a service container — it is a small, extendable, state-aware base class that capabilities depend on and applications subclass.
 
 ```python
-# arnessa/pydanticai/deps.py
+# arnessa/deps.py
 
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ The publish layer assumes only `Agent[ArnessaDeps | Subclass]` and depends only 
 
 ---
 
-### `arnessa.pydanticai.capabilities`
+### `arnessa.capabilities`
 
 Each Arnessa capability is an `AbstractCapability` subclass. They compose like any PydanticAI capability: they provide tools, hook into the lifecycle, inject instructions, and access `RunContext[Deps]`.
 
@@ -175,7 +175,7 @@ Capabilities beyond the base three can declare additional requirements. Arnessa 
 
 ```python
 from pydantic_ai import Agent
-from arnessa.pydanticai.capabilities import AgentState, DeferredCalls, DynamicUI
+from arnessa.capabilities import AgentState, DeferredCalls, DynamicUI
 from myapp.deps import EditorDeps
 from myapp.state import DocumentState
 
@@ -199,7 +199,7 @@ agent = Agent[EditorDeps](
 
 ```python
 from fastapi import FastAPI
-from arnessa.pydanticai.publish import ArnessaApp
+from arnessa.publish import ArnessaApp
 
 app = FastAPI()
 app.mount("/harness", ArnessaApp(agent))
@@ -211,7 +211,7 @@ app.mount("/harness", ArnessaApp(agent))
 from fastapi import FastAPI
 from starlette.requests import Request
 from starlette.responses import Response
-from arnessa.pydanticai.publish import dispatch_arnessa_request
+from arnessa.publish import dispatch_arnessa_request
 
 app = FastAPI()
 
@@ -223,7 +223,7 @@ async def harness(request: Request) -> Response:
 **FastAPI sugar:**
 
 ```python
-from arnessa.pydanticai.publish.fastapi import mount_arnessa
+from arnessa.publish.fastapi import mount_arnessa
 
 mount_arnessa(app, "/harness", agent)
 ```
@@ -304,7 +304,7 @@ registerComponent("ConfirmForm", ConfirmForm);
 
 ## Arnessa Protocol Spec
 
-This document defines the wire protocol between `arnessa.pydanticai.publish` and `@arnessa/react`. All events flow over Server-Sent Events (SSE). Client-to-server messages use HTTP POST. All payloads are JSON.
+This document defines the wire protocol between `arnessa.publish` and `@arnessa/react`. All events flow over Server-Sent Events (SSE). Client-to-server messages use HTTP POST. All payloads are JSON.
 
 ---
 
