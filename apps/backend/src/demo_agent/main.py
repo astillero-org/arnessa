@@ -1,12 +1,12 @@
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 
-from arnessa.agent import ArnessaAgentBuilder
-from arnessa.pydanticai.publish import ArnessaApp
+from .agent import ArnessaAgentBuilder
+from arnessa import ArnessaApp
 
 load_dotenv()
 
-from arnessa.state import DEFAULT_BACKEND
+from .state import DEFAULT_BACKEND
 
 backend = DEFAULT_BACKEND
 assert DEFAULT_BACKEND is not None, "DEFAULT_BACKEND must be set to a valid LocalBackend instance."

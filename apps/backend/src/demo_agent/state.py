@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from pydantic_ai_backends import LocalBackend
 
-from arnessa.pydanticai.deps import ArnessaDeps as BaseArnessaDeps
+from arnessa import ArnessaDeps as BaseArnessaDeps
 
 load_dotenv()
 

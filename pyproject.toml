@@ -11,7 +11,7 @@ dependencies = [
 arnessa = { workspace = true }
 
 [tool.uv.workspace]
-members = ["apps/backend"]
+members = ["apps/backend", "packages/arnessa"]
 
 [tool.ruff]
 line-length = 100

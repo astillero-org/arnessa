@@ -13,7 +13,7 @@ from pydantic_ai.toolsets import AgentToolset, FunctionToolset
 from pydantic_ai.exceptions import CallDeferred
 from pydantic_ai.tools import ToolDefinition
 
-from .deps import ArnessaDeps, ArnessaEvent
+from ..deps import ArnessaDeps, ArnessaEvent
 
 T = TypeVar("T")
 

@@ -1,31 +1,20 @@
 [project]
-name = "arnessa"
+name = "demo-agent"
 version = "0.1.0"
-description = "Arnessa"
+description = "Arnessa Demo Agent"
 requires-python = ">=3.13"
 dependencies = [
-    "pydantic-ai==1.81.0",
+    "arnessa",
     "subagents-pydantic-ai==0.2.1",
     "pydantic-ai-shields==0.3.1",
-    "starlette==0.52.1",
-    "google-genai==1.73.0",
-    "basicsr==1.4.2",
-    "realesrgan==0.3.0",
-    "pillow==12.2.0",
-    "tqdm==4.67.3",
-    "opencv-python==4.13.0.92",
-    "python-dotenv==1.2.2",
-    "pydantic-ai-skills==0.7.0",
-    "pydantic-ai-backend>=0.2.4",
-    "pydantic-ai-backend[console]>=0.2.4",
-    "pydantic-ai-harness>=0.1.1",
-    "rembg[cpu]>=2.0.75",
-    "pydantic-ai-harness[code-mode]>=0.1.1",
+    "logfire",
 ]
 
+[tool.uv.sources]
+arnessa = { workspace = true }
+
 [project.scripts]
-arnessa-cli = "arnessa.cli.main:app"
-arnessa-agui = "arnessa.agui.main:main"
+arnessa-agui = "demo_agent.main:main"
 
 [dependency-groups]
 dev = [
@@ -46,4 +35,4 @@ markers = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/arnessa"]
+packages = ["src/demo_agent"]

@@ -4,8 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, cast
 from pydantic import BaseModel
 
-from arnessa.pydanticai.deps import ArnessaDeps, ArnessaEvent
-from arnessa.pydanticai.capabilities import AgentState, DeferredCalls, DynamicUI
+from arnessa import ArnessaDeps, ArnessaEvent, AgentState, DeferredCalls, DynamicUI
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import CallDeferred
 from pydantic_ai.tools import ToolDefinition

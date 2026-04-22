@@ -2,8 +2,7 @@ import os
 import uvicorn
 import asyncio
 import copy
-from arnessa.pydanticai.publish import ArnessaApp
-from arnessa.pydanticai.capabilities import AgentState, DeferredCalls, DynamicUI
+from arnessa import ArnessaApp, AgentState, DeferredCalls, DynamicUI
 from pydantic_ai import Agent, RunContext, DeferredToolRequests
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ModelRequest, ToolReturnPart
