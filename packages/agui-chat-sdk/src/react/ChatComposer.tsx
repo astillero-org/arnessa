@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from 'react';
 import { AlertCircle, FileImage, FileText, Paperclip, SendHorizontal, X } from 'lucide-react';
-import { useChatActions, useChatOverrides, useChatState } from './ChatProvider';
+import { useChatActions, useChatOverrides, useChatState } from './ArnessaProvider';
 import { AttachmentDraft, fileToAttachmentDraft } from '../core/attachment-utils';
 
 export interface ChatComposerProps {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useChat, useChatOverrides, useChatState } from './ChatProvider';
+import { useChat, useChatOverrides, useChatState } from './ArnessaProvider';
 import { ActivityIndicator, CustomEventRenderer, EmptyState, MessageBubble, ToolResultCard } from './message-renderers';
 
 export interface MessageListProps {

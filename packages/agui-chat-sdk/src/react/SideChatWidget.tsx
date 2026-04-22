@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { HistoryList, HistoryEmpty } from './HistoryList';
-import { useChatState } from './ChatProvider';
+import { useChatState } from './ArnessaProvider';
 import { ActivityIndicator } from './message-renderers';
 
 export interface SideChatWidgetProps { isOpen?: boolean; onClose?: () => void; onSelectHistory?: (id: string) => void; }

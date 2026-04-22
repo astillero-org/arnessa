@@ -3,7 +3,7 @@
 import React from 'react';
 import { MessageList } from './MessageList';
 import { ChatComposer } from './ChatComposer';
-import { useChatActions, useChatState } from './ChatProvider';
+import { useChatActions, useChatState } from './ArnessaProvider';
 
 export interface FullScreenChatProps {
   className?: string;

@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, ChevronDown, ChevronUp, Expand, FileImage, FileText, Sparkles, Terminal, User, X } from 'lucide-react';
-import { useChatOverrides } from './ChatProvider';
+import { useChatOverrides } from './ArnessaProvider';
 
 type SourceLike = { type?: string; value?: string; mimeType?: string };
 type AttachmentLike = {
