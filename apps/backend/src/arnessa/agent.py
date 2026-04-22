@@ -39,7 +39,7 @@ class ArnessaAgentBuilder:
 
     def create(
         self
-    ) -> Agent:
+    ) -> Agent[ArnessaDeps, DeferredToolRequests | str]:
         #tools = self._build_tools(env_handle, session, mcp_registry)
         #subagents = self._build_subagents(env_handle, mcp_registry)
         #system_prompt = self._build_prompt(tools, subagents)
