@@ -29,6 +29,29 @@ it('renders empty state initially', async () => {
 });
 
 describe('MessageList DOM', () => {
+  it('renders user and assistant bubble structure', async () => {
+    const agent = new FakeAgent();
+    const controller = new ChatController({ agent: agent as any });
+    const { el, unmount } = await render(<ChatProvider controller={controller}><MessageList /></ChatProvider>);
+
+    await act(async () => {
+      await controller.sendUserMessage('hello user');
+      agent.emit({ type: EventType.RUN_STARTED, timestamp: 1 } as any);
+      agent.emit({ type: EventType.TEXT_MESSAGE_START, messageId: 'm1', role: 'assistant', timestamp: 2 } as any);
+      agent.emit({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'm1', delta: '**hello** back', timestamp: 3 } as any);
+      agent.emit({ type: EventType.TEXT_MESSAGE_END, messageId: 'm1', timestamp: 4 } as any);
+    });
+
+    const bubbles = Array.from(el.querySelectorAll('.arn-chat-message-bubble'));
+    expect(bubbles).toHaveLength(2);
+    expect(bubbles[0]?.className).toContain('justify-start');
+    expect(bubbles[0]?.textContent).toContain('hello user');
+    expect(bubbles[1]?.className).toContain('justify-end');
+    expect(bubbles[1]?.textContent).toContain('hello back');
+    expect(el.querySelector('strong')?.textContent).toBe('hello');
+    unmount();
+  });
+
   it('renders streamed assistant text', async () => {
     const agent = new FakeAgent();
     const controller = new ChatController({ agent: agent as any });
@@ -45,10 +68,11 @@ describe('MessageList DOM', () => {
   it('renders registered custom event output', async () => {
     const agent = new FakeAgent();
     const customEvents = new CustomEventRegistry();
-    customEvents.register({ name: 'thinking', render: ({ value }) => <div>custom:{String(value)}</div> });
+    customEvents.register({ name: 'thinking', render: ({ value }) => <div data-testid="custom-thinking">custom:{String(value)}</div> });
     const controller = new ChatController({ agent: agent as any, customEvents });
     const { el, unmount } = await render(<ChatProvider controller={controller}><MessageList /></ChatProvider>);
     await act(async () => { agent.emit({ type: EventType.CUSTOM, name: 'thinking', value: 'Searching', timestamp: 1 } as any); });
+    expect(el.querySelector('[data-testid="custom-thinking"]')?.textContent).toContain('custom:Searching');
     expect(text(el, 'custom:Searching')).toBe(true);
     unmount();
   });

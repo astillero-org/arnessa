@@ -10,8 +10,9 @@ export interface MessageListProps {
 
 export const MessageList: React.FC<MessageListProps> = ({ className }) => {
   const { timeline } = useChatState();
+  const timelineLength = timeline.length;
   const { controller } = useChat();
-  const { components } = useChatOverrides();
+  const { components, renderers } = useChatOverrides();
   const ref = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
@@ -34,7 +35,7 @@ export const MessageList: React.FC<MessageListProps> = ({ className }) => {
       if (!ref.current) return;
       ref.current.scrollTop = ref.current.scrollHeight;
     });
-  }, [timeline, isAtBottom]);
+  }, [timelineLength, isAtBottom]);
 
   const BubbleComponent = components.MessageBubble ?? MessageBubble;
   const ToolComponent = components.ToolResultCard ?? ToolResultCard;
@@ -86,11 +87,12 @@ export const MessageList: React.FC<MessageListProps> = ({ className }) => {
               );
             }
 
-            const customDef = controller.customEvents.resolve(item.name);
+            const customDef = (controller as any)?.customEvents?.resolve?.(item.name);
+            const Renderer = customDef?.render ?? renderers[item.name];
             return (
               <li key={key} className="flex min-w-0 justify-end">
-                {customDef?.render
-                  ? React.createElement(customDef.render, { value: item.value, event: item as any })
+                {Renderer
+                  ? React.createElement(Renderer, { value: item.value, event: item as any })
                   : <CustomEventRenderer name={item.name} value={item.value} timestamp={item.timestamp} />}
               </li>
             );

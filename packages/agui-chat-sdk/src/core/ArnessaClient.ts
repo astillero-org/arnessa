@@ -1,12 +1,20 @@
 import { BehaviorSubject, Observable, Subject } from "rxjs";
 
 export interface ArnessaEvent {
-  kind: string;
-  session_id: string;
-  seq: number;
-  timestamp: number;
-  payload: any;
+  type?: string;
+  kind?: string;
+  name?: string;
+  value?: any;
+  session_id?: string;
+  threadId?: string;
+  seq?: number;
+  timestamp?: number;
+  payload?: any;
+  [key: string]: any;
 }
+
+const isLegacyEvent = (event: ArnessaEvent): event is ArnessaEvent & { kind: string } => typeof event.kind === "string";
+const isAgUiEvent = (event: ArnessaEvent): event is ArnessaEvent & { type: string } => typeof event.type === "string";
 
 export class ArnessaClient {
   private eventSubject = new Subject<ArnessaEvent>();
@@ -137,15 +145,20 @@ export class ArnessaClient {
               const data = trimmedLine.slice(6).trim();
               try {
                 const event: ArnessaEvent = JSON.parse(data);
-                console.log(`[ArnessaClient] Received event: ${event.kind}`);
+                console.log(`[ArnessaClient] Received event: ${event.kind || event.type}`);
                 if (!this.sessionId) {
-                    this.sessionId = event.session_id;
-                    console.log(`[ArnessaClient] Set session_id to: ${this.sessionId}`);
+                    this.sessionId = event.session_id || event.threadId || null;
+                    if (this.sessionId) {
+                      console.log(`[ArnessaClient] Set session_id to: ${this.sessionId}`);
+                    }
                 }
                 this.eventSubject.next(event);
-                
-                if (event.kind === "run_complete" || event.kind === "run_error") {
+
+                if (isLegacyEvent(event) && (event.kind === "run_complete" || event.kind === "run_error")) {
                   this.statusSubject.next(event.kind === "run_complete" ? "idle" : "error");
+                }
+                if (isAgUiEvent(event) && (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR")) {
+                  this.statusSubject.next(event.type === "RUN_FINISHED" ? "idle" : "error");
                 }
               } catch (e) {
                 console.error("[ArnessaClient] Failed to parse event", e, "Data:", data);

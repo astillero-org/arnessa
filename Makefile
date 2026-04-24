@@ -10,10 +10,20 @@ demo:
 	@echo "Starting Arnessa Demo..."
 	@echo "Backend will run at http://localhost:8000"
 	@echo "Frontend will run at http://localhost:3000"
-	@(trap 'kill 0' SIGINT; \
-	  (cd apps/backend && uv run arnessa-agui) & \
-	  (cd apps/chat-demo && npm run dev) & \
-	  wait)
+	@command -v tmux >/dev/null 2>&1 || { echo "tmux is required for 'make demo'"; exit 1; }
+	@if [ ! -e "apps/chat-demo/node_modules/next/package.json" ]; then \
+		echo "Frontend dependencies missing; running pnpm install..."; \
+		pnpm install; \
+	fi
+	@tmux has-session -t arnessa-demo 2>/dev/null && tmux kill-session -t arnessa-demo || true
+	@tmux new-session -d -s arnessa-demo -n backend 'cd apps/backend && uv run arnessa-agui'
+	@tmux split-window -h -t arnessa-demo:backend 'pnpm --dir apps/chat-demo dev'
+	@tmux select-layout -t arnessa-demo:backend even-horizontal
+	@if [ -n "$$TMUX" ]; then \
+		tmux switch-client -t arnessa-demo; \
+	else \
+		tmux attach-session -t arnessa-demo; \
+	fi
 
 # Run all test suites
 test: backend-test frontend-test acceptance-test e2e-test

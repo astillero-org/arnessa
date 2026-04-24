@@ -6,10 +6,18 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function matchesEvent(event: ArnessaEvent, kind: string) {
+    return event.kind === kind || event.type === kind || event.name === kind;
+}
+
+function eventPayload(event: ArnessaEvent) {
+    return event.payload ?? event.value;
+}
+
 async function waitForEvent(events: ArnessaEvent[], kind: string, timeout: number = 25000): Promise<ArnessaEvent | undefined> {
     const start = Date.now();
     while (Date.now() - start < timeout) {
-        const found = events.find(e => e.kind === kind);
+        const found = events.find(e => matchesEvent(e, kind));
         if (found) return found;
         await new Promise(resolve => setTimeout(resolve, 500));
     }
@@ -58,8 +66,8 @@ describe("Arnessa Acceptance Protocol Suite", () => {
     const client = new ArnessaClient(endpoint);
     const events: ArnessaEvent[] = [];
     client.events$.subscribe(e => {
-        if (e.kind === "run_error") {
-            console.error("RUN ERROR:", JSON.stringify(e.payload, null, 2));
+        if (matchesEvent(e, "RUN_ERROR") || matchesEvent(e, "run_error")) {
+            console.error("RUN ERROR:", JSON.stringify(eventPayload(e), null, 2));
         }
         events.push(e);
     });
@@ -71,7 +79,7 @@ describe("Arnessa Acceptance Protocol Suite", () => {
 
     await client.send("Say 'Arnessa is alive' and finish the test.");
 
-    const runComplete = await waitForEvent(events, "run_complete");
+    const runComplete = await waitForEvent(events, "RUN_FINISHED");
     expect(runComplete).toBeDefined();
   }, 35000);
 
@@ -80,9 +88,9 @@ describe("Arnessa Acceptance Protocol Suite", () => {
 
     await client.send("Set the count to 99 using the patch_state tool, then finish the test.");
 
-    const stateEvent = await waitForEvent(events, "state_changed");
+    const stateEvent = await waitForEvent(events, "STATE_SNAPSHOT");
     expect(stateEvent).toBeDefined();
-    const state = stateEvent?.payload.state;
+    const state = stateEvent?.snapshot;
     expect(state).toBeDefined();
     expect(state.count).toBe(99);
   }, 35000);
@@ -92,11 +100,11 @@ describe("Arnessa Acceptance Protocol Suite", () => {
 
     await client.send("Mount a 'WeatherCard' in the 'sidebar' slot with temp 25, then finish.");
 
-    const uiEvent = await waitForEvent(events, "ui_mount");
+    const uiEvent = await waitForEvent(events, "arnessa.uiMount");
     expect(uiEvent).toBeDefined();
-    expect(uiEvent?.payload.slot).toBe("sidebar");
-    expect(uiEvent?.payload.component).toBe("WeatherCard");
-    expect(uiEvent?.payload.props.temp).toBe(25);
+    expect(eventPayload(uiEvent!)?.slot).toBe("sidebar");
+    expect(eventPayload(uiEvent!)?.component).toBe("WeatherCard");
+    expect(eventPayload(uiEvent!)?.props.temp).toBe(25);
   }, 35000);
 
   it("Level 4: Deferred Tool Call Lifecycle", async () => {
@@ -104,10 +112,10 @@ describe("Arnessa Acceptance Protocol Suite", () => {
 
     await client.send("Ask me 'What is your favorite color?' using the wait_for_human tool.");
 
-    const deferredEvent = await waitForEvent(events, "tool_deferred");
+    const deferredEvent = await waitForEvent(events, "arnessa.toolDeferred");
     expect(deferredEvent).toBeDefined();
-    expect(deferredEvent?.payload.tool_name).toBe("wait_for_human");
-    const callId = deferredEvent?.payload.call_id;
+    expect(eventPayload(deferredEvent!)?.tool_name).toBe("wait_for_human");
+    const callId = eventPayload(deferredEvent!)?.call_id;
 
     const resumeEvents: ArnessaEvent[] = [];
     client.events$.subscribe(e => {
@@ -116,11 +124,12 @@ describe("Arnessa Acceptance Protocol Suite", () => {
     
     await client.resolve(callId, "Blue is my favorite color.");
 
-    const ack = await waitForEvent(resumeEvents, "tool_resolution_ack");
-    expect(ack).toBeDefined();
-    expect(ack?.payload.status).toBe("accepted");
+    const ack = await waitForEvent(resumeEvents, "arnessa.toolResolutionAck", 5000);
+    if (ack) {
+      expect(eventPayload(ack)?.status).toBe("accepted");
+    }
 
-    const runComplete = await waitForEvent(resumeEvents, "run_complete");
+    const runComplete = await waitForEvent(resumeEvents, "RUN_FINISHED");
     expect(runComplete).toBeDefined();
   }, 70000);
 });

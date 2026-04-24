@@ -66,4 +66,37 @@ describe("ArnessaClient", () => {
       body: JSON.stringify({ call_id: "call-1", result: { result: "ok" } }),
     }));
   });
+
+  it("parses AG-UI events and derives thread id", async () => {
+    const mockEvents = [
+      { type: "RUN_STARTED", threadId: "thread-1", runId: "run-1" },
+      { type: "TEXT_MESSAGE_START", messageId: "m1", role: "assistant" },
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "Hola" },
+      { type: "CUSTOM", name: "arnessa.toolDeferred", value: { call_id: "c1", tool_name: "wait_for_human" } },
+      { type: "RUN_FINISHED" },
+    ];
+
+    const stream = new ReadableStream({
+      start(controller) {
+        mockEvents.forEach(e => {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(e)}\n\n`));
+        });
+        controller.close();
+      },
+    });
+
+    vi.mocked(fetch).mockResolvedValue({ ok: true, body: stream } as any);
+
+    const events: any[] = [];
+    const statuses: string[] = [];
+    client.events$.subscribe(e => events.push(e));
+    client.status$.subscribe(s => statuses.push(s));
+
+    await client.send("hello");
+
+    expect(events[0].type).toBe("RUN_STARTED");
+    expect(events[3].name).toBe("arnessa.toolDeferred");
+    expect(client.currentSessionId).toBe("thread-1");
+    expect(statuses.at(-1)).toBe("idle");
+  });
 });
