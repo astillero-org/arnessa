@@ -1,4 +1,4 @@
-.PHONY: install demo test backend-test frontend-test acceptance-test e2e-test
+.PHONY: install demo test quick-test py-compile backend-test frontend-test frontend-typecheck acceptance-test e2e-test e2e-drawing-approval-test
 
 # Install all dependencies for both Python and JS/TS
 install:
@@ -25,21 +25,40 @@ demo:
 		tmux attach-session -t arnessa-demo; \
 	fi
 
-# Run all test suites
-test: backend-test frontend-test acceptance-test e2e-test
+# Run the complete verification suite used before merging
+test: quick-test acceptance-test e2e-test
+
+# Run fast local checks that do not launch browsers or test servers
+quick-test: py-compile backend-test frontend-typecheck frontend-test
+
+# Compile changed/core Python entrypoints without executing tests
+py-compile:
+	uv run python -m py_compile \
+		packages/arnessa/src/arnessa/tools/photo_tools.py \
+		packages/arnessa/src/arnessa/publish.py \
+		packages/arnessa/src/arnessa/capabilities/image_store.py \
+		tests/acceptance/server.py
 
 # Backend SDK unit tests
 backend-test:
-	cd packages/arnessa && uv run pytest
+	uv run pytest packages/arnessa/tests
 
 # Frontend SDK unit tests
 frontend-test:
-	cd packages/agui-chat-sdk && npm test src/core/ArnessaClient.test.ts
+	pnpm --dir packages/agui-chat-sdk test
+
+# Frontend SDK TypeScript typecheck
+frontend-typecheck:
+	pnpm --dir packages/agui-chat-sdk typecheck
 
 # Protocol acceptance tests
 acceptance-test:
-	cd tests/acceptance && npm test
+	pnpm --dir tests/acceptance test
 
 # End-to-End UI tests
 e2e-test:
-	cd tests/e2e && npm test
+	pnpm --dir tests/e2e test
+
+# Focused E2E test for Python deferred approval -> frontend approval -> image render
+e2e-drawing-approval-test:
+	pnpm --dir tests/e2e exec playwright test src/arnessa.spec.ts -g "drawing approval" --project=chromium

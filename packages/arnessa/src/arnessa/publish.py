@@ -27,6 +27,7 @@ from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route
 from pydantic_ai import Agent, DeferredToolResults, DeferredToolRequests
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.tools import ToolDenied
 from pydantic_ai.capabilities import CombinedCapability
 from pydantic_ai.run import AgentRunResultEvent
 from pydantic_ai.ui._event_stream import NativeEvent
@@ -45,6 +46,7 @@ class Session:
     deps: ArnessaDeps
     queue: asyncio.Queue[Optional[dict[str, Any]]] = field(default_factory=asyncio.Queue)
     history: List[ModelMessage] = field(default_factory=list)
+    pending_deferred: Dict[str, str] = field(default_factory=dict)
     last_seen: float = field(default_factory=time.time)
 
 class SessionManager:
@@ -129,6 +131,45 @@ async def _enqueue_protocol_event(queue: asyncio.Queue[Optional[dict[str, Any]]]
     await queue.put(_protocol_event_dict(event))
 
 
+async def _emit_deferred_tool_requests(session: Session, requests: DeferredToolRequests) -> None:
+    for call in requests.calls:
+        call_args = json.loads(call.args) if isinstance(call.args, str) else call.args
+        session.pending_deferred[call.tool_call_id] = "call"
+        await session.deps.events.emit(ArnessaEvent(
+            kind="tool_deferred",
+            payload={
+                "call_id": call.tool_call_id,
+                "tool_name": call.tool_name,
+                "args": call_args,
+                "deferred_kind": "call",
+                "metadata": requests.metadata.get(call.tool_call_id, {}),
+            },
+            session_id=session.session_id,
+            timestamp=time.time(),
+        ))
+
+    for call in requests.approvals:
+        call_args = json.loads(call.args) if isinstance(call.args, str) else call.args
+        session.pending_deferred[call.tool_call_id] = "approval"
+        metadata = requests.metadata.get(call.tool_call_id, {})
+        question = metadata.get("approval_question")
+        if not question and call.tool_name == "generate_furniture_image":
+            question = "Allow Arnessa to draw this furniture image?"
+        await session.deps.events.emit(ArnessaEvent(
+            kind="tool_deferred",
+            payload={
+                "call_id": call.tool_call_id,
+                "tool_name": call.tool_name,
+                "args": call_args,
+                "deferred_kind": "approval",
+                "metadata": metadata,
+                "question": question or f"Allow {call.tool_name} to run?",
+            },
+            session_id=session.session_id,
+            timestamp=time.time(),
+        ))
+
+
 async def sse_generator(queue: asyncio.Queue[Optional[dict[str, Any]]], session_id: str) -> AsyncIterable[str]:
     while True:
         event = await queue.get()
@@ -174,11 +215,10 @@ class ArnessaApp(Starlette):
              except Exception:
                  pass
 
-        for k, v in custom_deps_data.items():
-            if hasattr(deps, k):
-                setattr(deps, k, v)
-        
         session = session_manager.get_or_create(session_id, self.agent, deps)
+        for k, v in custom_deps_data.items():
+            if hasattr(session.deps, k):
+                setattr(session.deps, k, v)
         session.deps.events = ArnessaEventSink(session.queue)
 
         asyncio.create_task(self._run_agent(session, message))
@@ -244,7 +284,10 @@ class ArnessaApp(Starlette):
                 session.history = result.all_messages()
                 print(f"[ArnessaApp] Run complete for {session.session_id}")
 
-                if result.output is not None:
+                if isinstance(result.output, DeferredToolRequests):
+                    await _emit_deferred_tool_requests(session, result.output)
+
+                if result.output is not None and not isinstance(result.output, DeferredToolRequests):
                     message_id = str(uuid.uuid4())
                     output = result.output if isinstance(result.output, str) else str(result.output)
                     await _enqueue_protocol_event(
@@ -268,18 +311,54 @@ class ArnessaApp(Starlette):
                 if first_event is not None:
                     if isinstance(first_event, AgentRunResultEvent):
                         session.history = first_event.result.all_messages()
+                        if isinstance(first_event.result.output, DeferredToolRequests):
+                            await _emit_deferred_tool_requests(session, first_event.result.output)
                         print(f"[ArnessaApp] Run complete for {session.session_id}")
                     yield first_event
 
                 async for event in native_events:
                     if isinstance(event, AgentRunResultEvent):
                         session.history = event.result.all_messages()
+                        if isinstance(event.result.output, DeferredToolRequests):
+                            await _emit_deferred_tool_requests(session, event.result.output)
                         print(f"[ArnessaApp] Run complete for {session.session_id}")
                     yield event
 
             async for event in event_stream.transform_stream(cast(Any, native_stream())):
                 await session.queue.put(_protocol_event_dict(event))
         except Exception as e:
+            if _streaming_not_supported(e):
+                print(f"[ArnessaApp] Falling back to non-streaming after stream error for {session.session_id}: {e}")
+                try:
+                    result = await session.agent.run(
+                        message,
+                        deps=session.deps,
+                        message_history=session.history,
+                        deferred_tool_results=deferred_results,
+                    )
+                    session.history = result.all_messages()
+                    if isinstance(result.output, DeferredToolRequests):
+                        await _emit_deferred_tool_requests(session, result.output)
+                    elif result.output is not None:
+                        message_id = str(uuid.uuid4())
+                        output = result.output if isinstance(result.output, str) else str(result.output)
+                        await _enqueue_protocol_event(
+                            session.queue,
+                            TextMessageStartEvent(message_id=message_id, role="assistant"),
+                        )
+                        if output:
+                            await _enqueue_protocol_event(
+                                session.queue,
+                                TextMessageContentEvent(message_id=message_id, delta=output),
+                            )
+                        await _enqueue_protocol_event(session.queue, TextMessageEndEvent(message_id=message_id))
+                    await _enqueue_protocol_event(
+                        session.queue,
+                        RunFinishedEvent(thread_id=session.session_id, run_id=str(uuid.uuid4())),
+                    )
+                    return
+                except Exception as fallback_error:
+                    e = fallback_error
             print(f"[ArnessaApp] Run error for {session.session_id}: {e}")
             if hasattr(e, "all_messages"):
                  session.history = e.all_messages() # type: ignore
@@ -310,6 +389,7 @@ class ArnessaApp(Starlette):
         body = await request.json()
         call_id = body.get("call_id")
         result_data = body.get("result")
+        result_kind = body.get("kind") or session.pending_deferred.get(call_id)
 
         session.deps.events = ArnessaEventSink(session.queue)
 
@@ -319,7 +399,13 @@ class ArnessaApp(Starlette):
             session_id=session_id
         ))
 
-        deferred_results = DeferredToolResults(calls={call_id: result_data})
+        if result_kind == "approval" or (isinstance(result_data, dict) and "approved" in result_data):
+            approved = bool(result_data.get("approved")) if isinstance(result_data, dict) else bool(result_data)
+            approval_result = True if approved else ToolDenied("The user denied this tool call.")
+            deferred_results = DeferredToolResults(approvals={call_id: approval_result})
+        else:
+            deferred_results = DeferredToolResults(calls={call_id: result_data})
+        session.pending_deferred.pop(call_id, None)
         
         asyncio.create_task(self._run_agent(session, deferred_results=deferred_results))
         

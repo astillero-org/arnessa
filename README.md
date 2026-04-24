@@ -54,12 +54,21 @@ uv sync
 
 For detailed information on the multi-level testing strategy, see [`docs/phase_2/testing_strategy.md`](docs/phase_2/testing_strategy.md).
 
-| Level | Command |
+Use the root `Makefile` for the canonical test workflow:
+
+| Purpose | Command |
 |---|---|
-| Backend SDK | `cd packages/arnessa && uv run pytest` |
-| Frontend SDK | `cd packages/agui-chat-sdk && npm test src/core/ArnessaClient.test.ts` |
-| Acceptance | `cd tests/acceptance && npm test` |
-| E2E UI | `cd tests/e2e && npm test` |
+| Fast local verification | `make quick-test` |
+| Full verification suite | `make test` |
+| Python compile smoke check | `make py-compile` |
+| Backend SDK tests | `make backend-test` |
+| Frontend SDK typecheck | `make frontend-typecheck` |
+| Frontend SDK unit tests | `make frontend-test` |
+| Protocol acceptance tests | `make acceptance-test` |
+| Full browser E2E tests | `make e2e-test` |
+| Deferred drawing approval E2E | `make e2e-drawing-approval-test` |
+
+The drawing approval E2E covers the full human-in-the-loop path: Python emits a deferred approval request, the frontend renders an approval question, the browser clicks **Allow**, Python resumes the tool call, and the frontend renders the resulting image.
 
 ## Documentation
 

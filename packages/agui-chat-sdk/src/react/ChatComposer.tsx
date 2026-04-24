@@ -167,8 +167,10 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({ className }) => {
         className="hidden"
         multiple
         onChange={async (event) => {
-          if (event.target.files?.length) await handleFiles(event.target.files);
-          event.currentTarget.value = '';
+          const input = event.currentTarget;
+          const files = input.files;
+          if (files?.length) await handleFiles(files);
+          input.value = '';
         }}
         accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.svg"
       />

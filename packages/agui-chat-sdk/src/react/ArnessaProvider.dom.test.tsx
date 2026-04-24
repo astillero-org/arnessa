@@ -16,6 +16,11 @@ async function render(ui: React.ReactElement) {
 describe('ArnessaProvider framework DOM', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:test-preview'),
+      revokeObjectURL: vi.fn(),
+    });
   });
 
   it('renders user, custom, tool, and assistant DOM from AG-UI stream', async () => {
@@ -85,6 +90,58 @@ describe('ArnessaProvider framework DOM', () => {
     });
 
     expect(el.textContent).toContain('result body');
+    unmount();
+  });
+
+  it('sends uploaded attachments to backend deps as artifacts', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'RUN_FINISHED', threadId: 'thread-1' })}\n\n`));
+        controller.close();
+      },
+    });
+    vi.mocked(fetch).mockResolvedValue({ ok: true, body: stream } as any);
+
+    const { el, unmount } = await render(
+      <ArnessaProvider endpoint="http://api.test">
+        <FullScreenChat />
+      </ArnessaProvider>
+    );
+
+    const input = el.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['image-fixture'], 'sofa.png', { type: 'image/png' });
+
+    await act(async () => {
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const textarea = el.querySelector('textarea');
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+      setter?.call(textarea, 'draw it as a sofa');
+      textarea!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    const form = el.querySelector('form');
+    await act(async () => {
+      form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+    expect(body.message).toBe('draw it as a sofa');
+    expect(body.deps.metadata.artifacts).toHaveLength(1);
+    expect(body.deps.metadata.artifacts[0]).toMatchObject({
+      name: 'sofa.png',
+      path: 'sofa.png',
+      mime_type: 'image/png',
+    });
+    expect(body.deps.metadata.artifacts[0].data).toMatch(/^data:image\/png;base64,/);
+    expect(input.value).toBe('');
     unmount();
   });
 });

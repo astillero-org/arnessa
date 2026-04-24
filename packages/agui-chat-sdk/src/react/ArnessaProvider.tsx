@@ -179,7 +179,19 @@ export const useChatActions = () => {
         content,
         timestamp: Date.now(),
       });
-      return client.send(text);
+      const deps = attachments.length > 0
+        ? {
+            metadata: {
+              artifacts: attachments.map((attachment: any) => ({
+                name: attachment.name,
+                path: attachment.name,
+                mime_type: attachment.mimeType || attachment.type || 'application/octet-stream',
+                data: `data:${attachment.mimeType || attachment.type || 'application/octet-stream'};base64,${attachment.base64}`,
+              })),
+            },
+          }
+        : undefined;
+      return client.send(text, deps);
     },
     resetConversation: () => chatStore.clearCurrentThread(),
     hydrateConversation: (snap: any) => chatStore.hydrateConversation(snap),

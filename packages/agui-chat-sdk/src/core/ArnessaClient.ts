@@ -67,7 +67,7 @@ export class ArnessaClient {
     }
   }
 
-  async resolve(callId: string, result: any) {
+  async resolve(callId: string, result: any, kind?: "call" | "approval") {
     if (!this.sessionId) throw new Error("No active session");
     
     console.log(`[ArnessaClient] Resolving call ${callId}`);
@@ -75,7 +75,7 @@ export class ArnessaClient {
     const response = await fetch(`${this.endpoint}/run/${this.sessionId}/resolve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ call_id: callId, result }),
+      body: JSON.stringify({ call_id: callId, result, kind }),
     });
 
     if (!response.ok) {

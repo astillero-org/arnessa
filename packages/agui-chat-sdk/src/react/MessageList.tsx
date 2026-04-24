@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useChat, useChatOverrides, useChatState } from './ArnessaProvider';
-import { ActivityIndicator, CustomEventRenderer, EmptyState, MessageBubble, ToolResultCard } from './message-renderers';
+import { useArnessa, useChat, useChatOverrides, useChatState } from './ArnessaProvider';
+import { ActivityIndicator, CustomEventRenderer, DeferredToolQuestionCard, EmptyState, MessageBubble, ToolResultCard } from './message-renderers';
 
 export interface MessageListProps {
   className?: string;
@@ -12,6 +12,7 @@ export const MessageList: React.FC<MessageListProps> = ({ className }) => {
   const { timeline } = useChatState();
   const timelineLength = timeline.length;
   const { controller } = useChat();
+  const { client } = useArnessa();
   const { components, renderers } = useChatOverrides();
   const ref = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -89,6 +90,13 @@ export const MessageList: React.FC<MessageListProps> = ({ className }) => {
 
             const customDef = (controller as any)?.customEvents?.resolve?.(item.name);
             const Renderer = customDef?.render ?? renderers[item.name];
+            if (item.name === 'arnessa.toolDeferred' && (item.value as any)?.deferred_kind === 'approval') {
+              return (
+                <li key={key} className="flex min-w-0 justify-end">
+                  <DeferredToolQuestionCard value={item.value} timestamp={item.timestamp} onResolve={client?.resolve.bind(client)} />
+                </li>
+              );
+            }
             return (
               <li key={key} className="flex min-w-0 justify-end">
                 {Renderer

@@ -282,3 +282,48 @@ export function CustomEventRenderer({ name, value, timestamp, className }: { nam
     </div>
   );
 }
+
+export function DeferredToolQuestionCard({
+  value,
+  timestamp,
+  onResolve,
+  className,
+}: {
+  value: any;
+  timestamp?: number;
+  onResolve?: (callId: string, result: any, kind?: 'call' | 'approval') => Promise<unknown> | unknown;
+  className?: string;
+}) {
+  const [answered, setAnswered] = useState(false);
+  const args = value?.args && typeof value.args === 'object' ? value.args : {};
+  const question = value?.question
+    || value?.metadata?.approval_question
+    || (value?.deferred_kind === 'approval' ? `Allow ${value?.tool_name || 'this tool'} to run?` : args.question)
+    || `Waiting for ${value?.tool_name || 'tool'} input`;
+  const details = value?.tool_name === 'generate_furniture_image'
+    ? [args.prompt, args.input_path ? `Source: ${args.input_path}` : null, args.output_path ? `Output: ${args.output_path}` : null].filter(Boolean).join('\n')
+    : null;
+
+  const resolve = async (approved: boolean) => {
+    if (!value?.call_id || !onResolve || answered) return;
+    setAnswered(true);
+    await onResolve(value.call_id, { approved }, 'approval');
+  };
+
+  return (
+    <div className={className ?? 'w-fit max-w-[60%] min-w-0 rounded-2xl border bg-card p-4 text-sm'}>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">Approval needed</div>
+      <div className="mt-2 font-medium">{question}</div>
+      {details ? <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-xl bg-muted/40 p-3 text-xs">{details}</pre> : null}
+      <div className="mt-4 flex gap-2">
+        <button type="button" disabled={answered || !onResolve} onClick={() => resolve(true)} className="rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50">
+          Allow
+        </button>
+        <button type="button" disabled={answered || !onResolve} onClick={() => resolve(false)} className="rounded-full border px-3 py-1.5 text-xs font-medium disabled:opacity-50">
+          Deny
+        </button>
+      </div>
+      {timestamp ? <div className="mt-2 text-xs text-muted-foreground">{formatTimestamp(timestamp)}</div> : null}
+    </div>
+  );
+}
