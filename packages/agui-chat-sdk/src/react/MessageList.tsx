@@ -6,9 +6,10 @@ import { ActivityIndicator, CustomEventRenderer, DeferredToolQuestionCard, Empty
 
 export interface MessageListProps {
   className?: string;
+  density?: 'default' | 'compact';
 }
 
-export const MessageList: React.FC<MessageListProps> = ({ className }) => {
+export const MessageList: React.FC<MessageListProps> = ({ className, density = 'default' }) => {
   const { timeline } = useChatState();
   const timelineLength = timeline.length;
   const { controller } = useChat();
@@ -48,7 +49,7 @@ export const MessageList: React.FC<MessageListProps> = ({ className }) => {
       ref={ref}
       className={className ?? 'h-0 min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4'}
     >
-      <ul className="space-y-4">
+      <ul className={density === 'compact' ? 'space-y-3' : 'space-y-4'}>
         {timeline.length === 0 ? (
           <EmptyComponent />
         ) : (
@@ -73,6 +74,7 @@ export const MessageList: React.FC<MessageListProps> = ({ className }) => {
                   content={item.message.content}
                   role={item.message.role || 'assistant'}
                   timestamp={item.message.timestamp}
+                  density={density}
                 />
               );
             }

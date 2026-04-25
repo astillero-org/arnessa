@@ -59,4 +59,21 @@ test.describe('Arnessa E2E Scenarios', () => {
     await expect(renderedChat).toContainText('Approved drawing sent.', { timeout: 15000 });
   });
 
+  test('side assistant demo: should start hidden and toggle from bubble', async ({ page }) => {
+    await page.goto('/');
+
+    await page.getByRole('tab', { name: 'Side assistant' }).click();
+
+    const launcher = page.getByRole('button', { name: 'Ask Assistant' });
+    await expect(launcher).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Hide assistant' })).toHaveCount(0);
+
+    await launcher.click();
+    await expect(page.getByRole('button', { name: 'Hide assistant' })).toBeVisible();
+    await expect(page.getByText('Shared SDK timeline, approvals, images, and composer')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Hide assistant' }).click();
+    await expect(page.getByRole('button', { name: 'Ask Assistant' })).toBeVisible();
+  });
+
 });

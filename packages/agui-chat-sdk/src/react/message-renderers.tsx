@@ -190,24 +190,25 @@ export function EmptyState() {
   );
 }
 
-export function MessageBubble({ content, role, timestamp, className }: { content: unknown; role: string; timestamp?: number; className?: string }) {
+export function MessageBubble({ content, role, timestamp, className, density = 'default' }: { content: unknown; role: string; timestamp?: number; className?: string; density?: 'default' | 'compact' }) {
   const isUser = role === 'user';
   const normalized = useMemo(() => normalizeContent(content), [content]);
   const { labels } = useChatOverrides();
+  const compact = density === 'compact';
 
   return (
     <li className={`${className ?? `flex min-w-0 gap-3 ${isUser ? 'justify-start' : 'justify-end'}`} arn-chat-message-bubble`}>
-      <div className={`w-fit max-w-[60%] inline-flex min-w-0 gap-3 overflow-hidden rounded-3xl border p-4 ${isUser ? 'bg-primary text-primary-foreground' : 'bg-card'}`}>
-        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${isUser ? 'bg-primary-foreground/15' : 'bg-muted'}`}>
-          {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+      <div className={`w-fit ${compact ? 'max-w-[78%] gap-2.5 rounded-[1.4rem] p-3' : 'max-w-[60%] gap-3 rounded-3xl p-4'} inline-flex min-w-0 overflow-hidden border ${isUser ? 'bg-primary text-primary-foreground' : 'bg-card'}`}>
+        <div className={`mt-0.5 flex ${compact ? 'h-7 w-7' : 'h-8 w-8'} shrink-0 items-center justify-center rounded-full ${isUser ? 'bg-primary-foreground/15' : 'bg-muted'}`}>
+          {isUser ? <User className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} /> : <Bot className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />}
         </div>
-        <div className="min-w-0 space-y-3 overflow-hidden">
+        <div className={`min-w-0 overflow-hidden ${compact ? 'space-y-2' : 'space-y-3'}`}>
           {normalized.text ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
-                p: (props) => <p className="break-words whitespace-pre-wrap text-sm leading-6" {...props} />,
-                pre: (props) => <pre className="max-h-64 max-w-full overflow-x-auto overflow-y-auto rounded-xl bg-muted/40 p-3 text-xs leading-6 whitespace-pre-wrap" {...props} />,
+                p: (props) => <p className={`break-words whitespace-pre-wrap ${compact ? 'text-[13px] leading-5' : 'text-sm leading-6'}`} {...props} />,
+                pre: (props) => <pre className={`max-h-64 max-w-full overflow-x-auto overflow-y-auto rounded-xl bg-muted/40 ${compact ? 'p-2.5 text-[11px] leading-5' : 'p-3 text-xs leading-6'} whitespace-pre-wrap`} {...props} />,
                 code: (props) => <code className="break-all whitespace-pre-wrap text-xs" {...props} />,
               }}
             >
@@ -221,7 +222,7 @@ export function MessageBubble({ content, role, timestamp, className }: { content
               ))}
             </div>
           ) : null}
-          {timestamp ? <p className="text-xs opacity-60">{formatTimestamp(timestamp)}</p> : null}
+          {timestamp ? <p className={`${compact ? 'text-[11px]' : 'text-xs'} opacity-60`}>{formatTimestamp(timestamp)}</p> : null}
         </div>
       </div>
     </li>

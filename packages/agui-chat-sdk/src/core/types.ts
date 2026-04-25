@@ -65,7 +65,7 @@ export interface ChatLabels {
 
 export interface ChatComponentOverrides {
   EmptyState?: React.ComponentType;
-  MessageBubble?: React.ComponentType<{ content: unknown; role: string; timestamp?: number; className?: string }>;
+  MessageBubble?: React.ComponentType<{ content: unknown; role: string; timestamp?: number; className?: string; density?: 'default' | 'compact' }>;
   ToolResultCard?: React.ComponentType<{ content: string; toolName?: string; timestamp?: number; className?: string }>;
   ActivityIndicator?: React.ComponentType<{ label: string; timestamp?: number; className?: string }>;
   Composer?: React.ComponentType<{ className?: string }>;
