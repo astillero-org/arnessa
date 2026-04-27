@@ -50,4 +50,4 @@ The system is fully operational and verified through a 4-layer testing strategy:
 ## Reorganized Documentation
 
 - **`docs/phase_1/`**: Archive of legacy AG-UI implementation notes and initial project requirements.
-- **`docs/phase_2/`**: Active specification, implementation report, and testing strategy for the current architecture.
+- **`docs/phase_2/`**: Active how-to guide, specification, implementation report, and testing strategy for the current architecture.

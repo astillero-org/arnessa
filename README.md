@@ -73,6 +73,7 @@ The drawing approval E2E covers the full human-in-the-loop path: Python emits a 
 ## Documentation
 
 Detailed documentation is available in the `docs/` directory:
+- **[How to Use](docs/phase_2/how_to_use.md)**: Integration guide for adding Arnessa to an existing system.
 - **[Specification](docs/phase_2/spec.md)**: Protocol and capability definitions.
 - **[Implementation Report](docs/phase_2/implementation_report.md)**: Details on the current Phase 2 architecture.
 - **[Legacy Archive](docs/phase_1/)**: Notes and research from Phase 1.
