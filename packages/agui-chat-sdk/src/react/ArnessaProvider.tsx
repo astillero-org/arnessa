@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { ArnessaClient, ArnessaEvent } from "../core/ArnessaClient";
+import { ArnessaClient, ArnessaEvent, GetHeaders } from "../core/ArnessaClient";
 import { ChatController } from "../core/ChatController";
 import { ChatStore } from "../core/ChatStore";
 import { attachmentToInputContent } from "../core/attachment-utils";
-import type { ChatState } from "../core/types";
+import type { ChatState, TimelineItem } from "../core/types";
 
 interface ArnessaContextType {
   client?: ArnessaClient;
@@ -39,6 +39,10 @@ export interface ArnessaProviderProps {
   components?: Record<string, React.ComponentType<any>>;
   renderers?: Record<string, React.ComponentType<any>>;
   children: React.ReactNode;
+  getHeaders?: GetHeaders;
+  store?: ChatStore;
+  initialTimeline?: TimelineItem[];
+  onStateChange?: (state: ChatState) => void;
 }
 
 const ArnessaOverridesContext = createContext<{
@@ -47,22 +51,44 @@ const ArnessaOverridesContext = createContext<{
   renderers: Record<string, React.ComponentType<any>>;
 } | null>(null);
 
-export const ArnessaProvider: React.FC<ArnessaProviderProps> = ({ 
-  endpoint, 
-  sessionId: initialSessionId, 
+export const ArnessaProvider: React.FC<ArnessaProviderProps> = ({
+  endpoint,
+  sessionId: initialSessionId,
   labels = {},
   components = {},
   renderers = {},
-  children 
+  children,
+  getHeaders,
+  store: externalStore,
+  initialTimeline,
+  onStateChange,
 }) => {
-  const client = useMemo(() => new ArnessaClient(endpoint, initialSessionId), [endpoint, initialSessionId]);
-  const [chatStore] = useState(() => new ChatStore());
+  const client = useMemo(
+    () => new ArnessaClient(endpoint, initialSessionId, getHeaders),
+    // getHeaders intentionally excluded: refreshing the client on every render cycle is undesirable;
+    // consumers should memoize getHeaders themselves if they need it to update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [endpoint, initialSessionId],
+  );
+  const chatStore = useMemo(() => {
+    const s = externalStore ?? new ChatStore();
+    if (!externalStore && initialTimeline?.length) {
+      s.hydrateConversation({ timeline: initialTimeline, threadId: null });
+    }
+    return s;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalStore]);
   const [status, setStatus] = useState<"idle" | "running" | "error">("idle");
   const [events, setEvents] = useState<ArnessaEvent[]>([]);
   const [chatState, setChatState] = useState<ChatState>(() => chatStore.getState());
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId || null);
 
   useEffect(() => chatStore.subscribe(setChatState), [chatStore]);
+
+  useEffect(() => {
+    if (!onStateChange) return;
+    return chatStore.subscribe(onStateChange);
+  }, [chatStore, onStateChange]);
 
   useEffect(() => {
     const statusSub = client.status$.subscribe(setStatus);
@@ -144,7 +170,7 @@ export const useArnessaOverrides = () => {
   return context;
 };
 
-// Legacy compatibility hooks
+// Legacy compatibility hooks — prefer useArnessaChat() for new code
 export const useChatState = () => {
   const { chatState } = useArnessa();
   if (!chatState) throw new Error("useChatState requires ArnessaProvider or ChatProvider");

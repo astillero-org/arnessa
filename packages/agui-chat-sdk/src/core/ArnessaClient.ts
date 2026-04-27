@@ -13,6 +13,8 @@ export interface ArnessaEvent {
   [key: string]: any;
 }
 
+export type GetHeaders = () => Promise<Record<string, string>> | Record<string, string>;
+
 const isLegacyEvent = (event: ArnessaEvent): event is ArnessaEvent & { kind: string } => typeof event.kind === "string";
 const isAgUiEvent = (event: ArnessaEvent): event is ArnessaEvent & { type: string } => typeof event.type === "string";
 
@@ -21,9 +23,15 @@ export class ArnessaClient {
   private statusSubject = new BehaviorSubject<"idle" | "running" | "error">("idle");
   private sessionId: string | null = null;
 
-  constructor(private endpoint: string, initialSessionId?: string) {
+  constructor(private endpoint: string, initialSessionId?: string, private getHeaders?: GetHeaders) {
     this.sessionId = initialSessionId || null;
     console.log(`[ArnessaClient] Initialized with endpoint: ${this.endpoint}`);
+  }
+
+  private async buildHeaders(base: Record<string, string> = {}): Promise<Record<string, string>> {
+    if (!this.getHeaders) return base;
+    const extra = await this.getHeaders();
+    return { ...base, ...extra };
   }
 
   get events$(): Observable<ArnessaEvent> {
@@ -44,7 +52,7 @@ export class ArnessaClient {
     try {
         const response = await fetch(`${this.endpoint}/run`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await this.buildHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             message,
             session_id: this.sessionId || undefined,
@@ -74,7 +82,7 @@ export class ArnessaClient {
     this.statusSubject.next("running");
     const response = await fetch(`${this.endpoint}/run/${this.sessionId}/resolve`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await this.buildHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ call_id: callId, result, kind }),
     });
 
@@ -92,7 +100,7 @@ export class ArnessaClient {
 
     const response = await fetch(`${this.endpoint}/run/${this.sessionId}/patch`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await this.buildHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ patch }),
     });
 
@@ -105,6 +113,7 @@ export class ArnessaClient {
     this.sessionId = sessionId;
     const response = await fetch(`${this.endpoint}/run/${sessionId}`, {
       method: "GET",
+      headers: await this.buildHeaders(),
     });
 
     if (!response.ok) {

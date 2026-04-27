@@ -7,7 +7,7 @@ import uuid
 import copy
 import logging
 from dataclasses import asdict, dataclass, field
-from typing import Any, AsyncIterable, Dict, List, Optional, TypeVar, cast
+from typing import Any, AsyncIterable, Awaitable, Callable, Dict, List, Optional, Protocol, TypeVar, cast
 
 from ag_ui.core import (
     CustomEvent,
@@ -39,6 +39,51 @@ from .capabilities import AgentState
 logger = logging.getLogger("arnessa.publish")
 T = TypeVar("T")
 
+
+# ---------------------------------------------------------------------------
+# SessionStore protocol + default in-memory implementation
+# ---------------------------------------------------------------------------
+
+class SessionStore(Protocol):
+    async def load(self, session_id: str) -> list[ModelMessage]: ...
+    async def save(self, session_id: str, history: list[ModelMessage]) -> None: ...
+    async def delete(self, session_id: str) -> None: ...
+
+
+class InMemorySessionStore:
+    def __init__(self) -> None:
+        self._store: Dict[str, List[ModelMessage]] = {}
+
+    async def load(self, session_id: str) -> List[ModelMessage]:
+        return list(self._store.get(session_id, []))
+
+    async def save(self, session_id: str, history: List[ModelMessage]) -> None:
+        self._store[session_id] = list(history)
+
+    async def delete(self, session_id: str) -> None:
+        self._store.pop(session_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Auth hook type aliases and defaults
+# ---------------------------------------------------------------------------
+
+SessionIdFactory = Callable[[Request, Optional[str]], Awaitable[str]]
+AuthorizeSession = Callable[[Request, str], Awaitable[bool]]
+
+
+async def _default_session_id_factory(request: Request, client_sid: Optional[str]) -> str:
+    return client_sid or uuid.uuid4().hex
+
+
+async def _default_authorize_session(request: Request, session_id: str) -> bool:
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Session / SessionManager
+# ---------------------------------------------------------------------------
+
 @dataclass
 class Session:
     session_id: str
@@ -49,19 +94,40 @@ class Session:
     pending_deferred: Dict[str, str] = field(default_factory=dict)
     last_seen: float = field(default_factory=time.time)
 
-class SessionManager:
-    def __init__(self):
-        self.sessions: Dict[str, Session] = {}
 
-    def get_or_create(self, session_id: str, agent: Agent[Any, Any], deps: ArnessaDeps) -> Session:
+class SessionManager:
+    def __init__(self) -> None:
+        self.sessions: Dict[str, Session] = {}
+        self._load_locks: Dict[str, asyncio.Lock] = {}
+
+    def _get_load_lock(self, session_id: str) -> asyncio.Lock:
+        if session_id not in self._load_locks:
+            self._load_locks[session_id] = asyncio.Lock()
+        return self._load_locks[session_id]
+
+    async def get_or_create(
+        self,
+        session_id: str,
+        agent: Agent[Any, Any],
+        deps: ArnessaDeps,
+        store: SessionStore,
+    ) -> Session:
         if session_id not in self.sessions:
-            self.sessions[session_id] = Session(session_id, agent, deps)
+            async with self._get_load_lock(session_id):
+                if session_id not in self.sessions:
+                    history = await store.load(session_id)
+                    self.sessions[session_id] = Session(session_id, agent, deps, history=history)
         session = self.sessions[session_id]
         session.last_seen = time.time()
         return session
 
     def get(self, session_id: str) -> Optional[Session]:
         return self.sessions.get(session_id)
+
+
+# ---------------------------------------------------------------------------
+# Event sink
+# ---------------------------------------------------------------------------
 
 class ArnessaEventSink(EventSink):
     def __init__(self, queue: asyncio.Queue[Optional[dict[str, Any]]]):
@@ -77,7 +143,6 @@ class ArnessaEventSink(EventSink):
         for protocol_event in _protocol_events_from_arnessa(event):
             await self.queue.put(protocol_event)
 
-session_manager = SessionManager()
 
 def _timestamp_ms(timestamp: float | None) -> int | None:
     if timestamp is None:
@@ -185,9 +250,21 @@ async def sse_generator(queue: asyncio.Queue[Optional[dict[str, Any]]], session_
         yield f"data: {data}\n\n"
         queue.task_done()
 
+
 class ArnessaApp(Starlette):
-    def __init__(self, agent: Agent[Any, Any]):
+    def __init__(
+        self,
+        agent: Agent[Any, Any],
+        *,
+        session_store: Optional[SessionStore] = None,
+        session_id_factory: Optional[SessionIdFactory] = None,
+        authorize_session: Optional[AuthorizeSession] = None,
+    ):
         self.agent = agent
+        self.session_store: SessionStore = session_store or InMemorySessionStore()
+        self.session_id_factory = session_id_factory
+        self.authorize_session_fn = authorize_session
+        self.session_manager = SessionManager()
         routes = [
             Route("/run", self.run, methods=["POST"]),
             Route("/run/{session_id}", self.reconnect, methods=["GET"]),
@@ -196,17 +273,29 @@ class ArnessaApp(Starlette):
         ]
         super().__init__(routes=routes)
 
+    async def _resolve_session_id(self, request: Request, client_sid: Optional[str]) -> str:
+        factory = self.session_id_factory or _default_session_id_factory
+        return await factory(request, client_sid)
+
+    async def _check_authorization(self, request: Request, session_id: str) -> Optional[Response]:
+        auth_fn = self.authorize_session_fn or _default_authorize_session
+        allowed = await auth_fn(request, session_id)
+        if not allowed:
+            return Response("Forbidden", status_code=403)
+        return None
+
     async def run(self, request: Request) -> Response:
         print("[ArnessaApp] POST /run received")
         body = await request.json()
         message = body.get("message")
-        session_id = body.get("session_id") or str(uuid.uuid4())
+        client_sid = body.get("session_id")
         custom_deps_data = body.get("deps", {})
 
+        session_id = await self._resolve_session_id(request, client_sid)
         print(f"[ArnessaApp] Starting run for session {session_id} with message: {message}")
 
         deps = ArnessaDeps(session_id=session_id)
-        
+
         agent_state_cap = self._find_agent_state_capability(self.agent)
         if agent_state_cap:
              state_type = agent_state_cap.state_type
@@ -215,7 +304,7 @@ class ArnessaApp(Starlette):
              except Exception:
                  pass
 
-        session = session_manager.get_or_create(session_id, self.agent, deps)
+        session = await self.session_manager.get_or_create(session_id, self.agent, deps, self.session_store)
         for k, v in custom_deps_data.items():
             if hasattr(session.deps, k):
                 setattr(session.deps, k, v)
@@ -282,6 +371,7 @@ class ArnessaApp(Starlette):
                     deferred_tool_results=deferred_results,
                 )
                 session.history = result.all_messages()
+                await self.session_store.save(session.session_id, session.history)
                 print(f"[ArnessaApp] Run complete for {session.session_id}")
 
                 if isinstance(result.output, DeferredToolRequests):
@@ -307,12 +397,15 @@ class ArnessaApp(Starlette):
                 )
                 return
 
+            session_store = self.session_store
+
             async def native_stream() -> AsyncIterable[NativeEvent]:
                 if first_event is not None:
                     if isinstance(first_event, AgentRunResultEvent):
                         session.history = first_event.result.all_messages()
                         if isinstance(first_event.result.output, DeferredToolRequests):
                             await _emit_deferred_tool_requests(session, first_event.result.output)
+                        await session_store.save(session.session_id, session.history)
                         print(f"[ArnessaApp] Run complete for {session.session_id}")
                     yield first_event
 
@@ -321,11 +414,15 @@ class ArnessaApp(Starlette):
                         session.history = event.result.all_messages()
                         if isinstance(event.result.output, DeferredToolRequests):
                             await _emit_deferred_tool_requests(session, event.result.output)
+                        await session_store.save(session.session_id, session.history)
                         print(f"[ArnessaApp] Run complete for {session.session_id}")
                     yield event
 
             async for event in event_stream.transform_stream(cast(Any, native_stream())):
                 await session.queue.put(_protocol_event_dict(event))
+        except asyncio.CancelledError:
+            print(f"[ArnessaApp] Run cancelled for {session.session_id}")
+            raise
         except Exception as e:
             if _streaming_not_supported(e):
                 print(f"[ArnessaApp] Falling back to non-streaming after stream error for {session.session_id}: {e}")
@@ -337,6 +434,7 @@ class ArnessaApp(Starlette):
                         deferred_tool_results=deferred_results,
                     )
                     session.history = result.all_messages()
+                    await self.session_store.save(session.session_id, session.history)
                     if isinstance(result.output, DeferredToolRequests):
                         await _emit_deferred_tool_requests(session, result.output)
                     elif result.output is not None:
@@ -361,19 +459,21 @@ class ArnessaApp(Starlette):
                     e = fallback_error
             print(f"[ArnessaApp] Run error for {session.session_id}: {e}")
             if hasattr(e, "all_messages"):
-                 session.history = e.all_messages() # type: ignore
-            if not isinstance(e, asyncio.CancelledError):
-                await _enqueue_protocol_event(session.queue, RunErrorEvent(message=str(e)))
+                session.history = e.all_messages()  # type: ignore
+                await self.session_store.save(session.session_id, session.history)
+            await _enqueue_protocol_event(session.queue, RunErrorEvent(message=str(e)))
         finally:
             await session.queue.put(None)
 
     async def reconnect(self, request: Request) -> Response:
         print("[ArnessaApp] GET /reconnect received")
         session_id = cast(str, request.path_params.get("session_id"))
-        session = session_manager.get(session_id)
+        if (denied := await self._check_authorization(request, session_id)):
+            return denied
+        session = self.session_manager.get(session_id)
         if not session:
             return Response("Session not found", status_code=404)
-        
+
         return StreamingResponse(
             sse_generator(session.queue, session_id),
             media_type="text/event-stream"
@@ -382,10 +482,12 @@ class ArnessaApp(Starlette):
     async def resolve(self, request: Request) -> Response:
         print("[ArnessaApp] POST /resolve received")
         session_id = cast(str, request.path_params.get("session_id"))
-        session = session_manager.get(session_id)
+        if (denied := await self._check_authorization(request, session_id)):
+            return denied
+        session = self.session_manager.get(session_id)
         if not session:
             return Response("Session not found", status_code=404)
-        
+
         body = await request.json()
         call_id = body.get("call_id")
         result_data = body.get("result")
@@ -406,9 +508,9 @@ class ArnessaApp(Starlette):
         else:
             deferred_results = DeferredToolResults(calls={call_id: result_data})
         session.pending_deferred.pop(call_id, None)
-        
+
         asyncio.create_task(self._run_agent(session, deferred_results=deferred_results))
-        
+
         return StreamingResponse(
             sse_generator(session.queue, session_id),
             media_type="text/event-stream"
@@ -417,10 +519,12 @@ class ArnessaApp(Starlette):
     async def patch(self, request: Request) -> Response:
         print("[ArnessaApp] POST /patch received")
         session_id = cast(str, request.path_params.get("session_id"))
-        session = session_manager.get(session_id)
+        if (denied := await self._check_authorization(request, session_id)):
+            return denied
+        session = self.session_manager.get(session_id)
         if not session:
             return Response("Session not found", status_code=404)
-        
+
         body = await request.json()
         patch = body.get("patch", {})
 
@@ -432,11 +536,11 @@ class ArnessaApp(Starlette):
         elif hasattr(state, "__dict__"):
             for k, v in patch.items():
                 setattr(state, k, v)
-        
+
         await session.deps.events.emit(ArnessaEvent(
             kind="state_changed",
             payload={
-                "state": self._serialize_state(state), 
+                "state": self._serialize_state(state),
                 "writable_fields": list(patch.keys())
             },
             session_id=session_id
@@ -450,6 +554,7 @@ class ArnessaApp(Starlette):
         if hasattr(state, "__dict__"):
             return copy.copy(state.__dict__)
         return state
+
 
 async def dispatch_arnessa_request(request: Request, agent: Agent[Any, Any]) -> Response:
     app = ArnessaApp(agent)
@@ -469,5 +574,5 @@ async def dispatch_arnessa_request(request: Request, agent: Agent[Any, Any]) -> 
                 return await app.reconnect(request)
         except (ValueError, IndexError):
             pass
-    
+
     return Response("Not Found", status_code=404)
